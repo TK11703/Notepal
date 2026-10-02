@@ -1,0 +1,54 @@
+@* Renders a search snippet whose matches are wrapped in ⟦ ⟧ markers. Text is rendered (and therefore encoded) by Razor, never as raw HTML. *@
+<span class="snippet">
+    @foreach (var (text, highlighted) in Segments)
+    {
+        if (highlighted)
+        {
+            <mark>@text</mark>
+        }
+        else
+        {
+            @text
+        }
+    }
+</span>
+
+@code {
+    private const char Start = '\u27E6';
+    private const char End = '\u27E7';
+
+    [Parameter, EditorRequired] public string? Text { get; set; }
+
+    private IEnumerable<(string Text, bool Highlighted)> Segments
+    {
+        get
+        {
+            var value = Text ?? string.Empty;
+            var position = 0;
+            while (position < value.Length)
+            {
+                var start = value.IndexOf(Start, position);
+                if (start < 0)
+                {
+                    yield return (value[position..], false);
+                    yield break;
+                }
+
+                if (start > position)
+                {
+                    yield return (value[position..start], false);
+                }
+
+                var end = value.IndexOf(End, start + 1);
+                if (end < 0)
+                {
+                    yield return (value[(start + 1)..], true);
+                    yield break;
+                }
+
+                yield return (value[(start + 1)..end], true);
+                position = end + 1;
+            }
+        }
+    }
+}

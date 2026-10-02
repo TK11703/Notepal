@@ -1,0 +1,19 @@
+@inject NavigationManager Navigation
+
+<AuthorizeView>
+    <Authorized>
+        <span class="small text-body-secondary text-truncate d-none d-sm-inline" style="max-width: 14rem;">@context.User.FindFirst("name")?.Value</span>
+        <form action="authentication/logout" method="post" class="d-inline">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="/" />
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Sign out</button>
+        </form>
+    </Authorized>
+    <NotAuthorized>
+        <a class="btn btn-sm btn-primary" href="@LoginUrl">Sign in</a>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private string LoginUrl => $"authentication/login?returnUrl={Uri.EscapeDataString("/" + Navigation.ToBaseRelativePath(Navigation.Uri))}";
+}

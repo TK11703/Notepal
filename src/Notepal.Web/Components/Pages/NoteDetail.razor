@@ -1,0 +1,347 @@
+@page "/notes/{NoteId:guid}"
+@attribute [Authorize]
+@inherits NotepalComponentBase
+@implements IDisposable
+
+<PageTitle>@(note?.Title ?? "Note") · Notepal</PageTitle>
+
+<ApiErrorAlert @bind-Message="ErrorMessage" />
+
+@if (notFound)
+{
+    <h1 class="h3">Note not found</h1>
+    <p>The note does not exist or it belongs to another account. <a href="notes">Back to my notes</a>.</p>
+}
+else if (note is null)
+{
+    <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else
+{
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        @if (editingTitle)
+        {
+            <form class="d-flex gap-2 flex-grow-1" style="max-width: 36rem;" @onsubmit="SaveTitleAsync">
+                <input class="form-control" maxlength="200" aria-label="Note title" @bind="titleDraft" />
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button class="btn btn-outline-secondary" type="button" @onclick="() => editingTitle = false">Cancel</button>
+            </form>
+        }
+        else
+        {
+            <h1 class="h3 mb-0 me-1 text-break">@note.Title</h1>
+            <button class="btn btn-sm btn-link" type="button" @onclick="StartTitleEdit">Rename</button>
+        }
+        <StatusBadge Status="note.Status" />
+        <div class="ms-auto d-flex gap-2">
+            @if (confirmDelete)
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="DeleteAsync">Confirm delete</button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => confirmDelete = false">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => confirmDelete = true">Delete note</button>
+            }
+        </div>
+    </div>
+
+    <div class="small text-body-secondary mb-3">
+        Created @note.CreatedAt.LocalDateTime.ToString("g") · Updated @note.UpdatedAt.LocalDateTime.ToString("g")
+    </div>
+
+    @if (note.Pages.Count > 1)
+    {
+        <nav class="mb-3" aria-label="Pages">
+            <ul class="pagination pagination-sm flex-wrap mb-0">
+                @foreach (var p in note.Pages)
+                {
+                    <li class="page-item @(p.Id == current?.Id ? "active" : null)">
+                        <button class="page-link" type="button" @onclick="() => SelectPage(p.PageNumber)" aria-current="@(p.Id == current?.Id ? "page" : null)">
+                            @p.PageNumber@(IsDirty(p) ? " •" : null)
+                        </button>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+
+    @if (current is not null)
+    {
+        <ul class="nav nav-tabs mb-3" role="tablist">
+            @foreach (var t in Enum.GetValues<ViewTab>())
+            {
+                <li class="nav-item" role="presentation">
+                    <button type="button" role="tab" class="nav-link @(tab == t ? "active" : null)" aria-selected="@(tab == t)" @onclick="() => tab = t">@TabLabel(t)</button>
+                </li>
+            }
+        </ul>
+
+        @if (tab == ViewTab.Original)
+        {
+            @RenderOriginal(current)
+        }
+        else if (tab == ViewTab.Notes)
+        {
+            @RenderEditor(current)
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-lg-6">@RenderOriginal(current)</div>
+                <div class="col-lg-6">@RenderEditor(current)</div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private enum ViewTab { Original, Notes, SideBySide }
+
+    [Parameter] public Guid NoteId { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private readonly Dictionary<Guid, string> drafts = [];
+    private readonly CancellationTokenSource disposed = new();
+    private NoteDto? note;
+    private PageDto? current;
+    private ViewTab tab = ViewTab.SideBySide;
+    private bool notFound;
+    private bool editingTitle;
+    private bool confirmDelete;
+    private bool polling;
+    private string? titleDraft;
+    private int editorVersion;
+
+    private static string TabLabel(ViewTab t) => t switch
+    {
+        ViewTab.Original => "🖼️ Original",
+        ViewTab.Notes => "📝 Notes",
+        _ => "↔️ Side by side",
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (note?.Id != NoteId)
+        {
+            note = null;
+            drafts.Clear();
+            await RunAsync(async () => SetNote(await Api.GetNoteAsync(NoteId, disposed.Token)));
+        }
+
+        SelectPage(PageNumber ?? current?.PageNumber ?? 1);
+    }
+
+    private void SetNote(NoteDto? value)
+    {
+        notFound = value is null;
+        note = value;
+        if (note is not null)
+        {
+            current = note.Pages.FirstOrDefault(p => p.Id == current?.Id) ?? note.Pages.FirstOrDefault();
+            if (IsProcessing(note.Status) && !polling)
+            {
+                _ = PollAsync();
+            }
+        }
+    }
+
+    private void SelectPage(int number)
+    {
+        current = note?.Pages.FirstOrDefault(p => p.PageNumber == number) ?? note?.Pages.FirstOrDefault();
+    }
+
+    private static bool IsProcessing(ProcessingStatus status) => status is ProcessingStatus.Pending or ProcessingStatus.Processing;
+
+    private async Task PollAsync()
+    {
+        polling = true;
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            while (await timer.WaitForNextTickAsync(disposed.Token))
+            {
+                var latest = await Api.GetNoteAsync(NoteId, disposed.Token);
+                await InvokeAsync(() =>
+                {
+                    SetNote(latest);
+                    StateHasChanged();
+                });
+
+                if (latest is null || !IsProcessing(latest.Status))
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            // Polling is best effort; the user can refresh the page.
+        }
+        finally
+        {
+            polling = false;
+        }
+    }
+
+    private void Discard(PageDto page)
+    {
+        drafts.Remove(page.Id);
+        editorVersion++;
+    }
+
+    private string GetText(PageDto page) => drafts.TryGetValue(page.Id, out var draft) ? draft : page.Text ?? string.Empty;
+
+    private void SetText(PageDto page, string? value) => drafts[page.Id] = value ?? string.Empty;
+
+    private bool IsDirty(PageDto page) => drafts.TryGetValue(page.Id, out var draft) && draft != (page.Text ?? string.Empty);
+
+    private void ReplacePage(PageDto updated)
+    {
+        if (note is null)
+        {
+            return;
+        }
+
+        var pages = note.Pages.Select(p => p.Id == updated.Id ? updated : p).ToList();
+        note = note with { Pages = pages, Status = Aggregate(pages) };
+        if (current?.Id == updated.Id)
+        {
+            current = updated;
+        }
+    }
+
+    private static ProcessingStatus Aggregate(IReadOnlyList<PageDto> pages) =>
+        pages.Any(p => IsProcessing(p.Status)) ? ProcessingStatus.Processing
+        : pages.Any(p => p.Status == ProcessingStatus.Failed) ? ProcessingStatus.Failed
+        : ProcessingStatus.Completed;
+
+    private async Task SaveTextAsync(PageDto page, string text)
+    {
+        if (await RunAsync(async () => ReplacePage(await Api.UpdatePageTextAsync(NoteId, page.Id, text))))
+        {
+            drafts.Remove(page.Id);
+            editorVersion++;
+        }
+    }
+
+    private async Task ReprocessAsync(PageDto page)
+    {
+        if (await RunAsync(async () => ReplacePage(await Api.ReprocessPageAsync(NoteId, page.Id))) && !polling)
+        {
+            _ = PollAsync();
+        }
+    }
+
+    private void StartTitleEdit()
+    {
+        titleDraft = note?.Title;
+        editingTitle = true;
+    }
+
+    private async Task SaveTitleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(titleDraft))
+        {
+            return;
+        }
+
+        if (await RunAsync(async () => note = await Api.RenameNoteAsync(NoteId, titleDraft)))
+        {
+            editingTitle = false;
+            SelectPage(current?.PageNumber ?? 1);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (await RunAsync(() => Api.DeleteNoteAsync(NoteId)))
+        {
+            Navigation.NavigateTo("notes");
+        }
+    }
+
+    private static string FileUrl(Guid noteId, PageDto pg) =>
+        $"files/notes/{noteId}/pages/{pg.Id}";
+
+    private RenderFragment RenderOriginal(PageDto pg) => __builder =>
+    {
+        <div class="original-viewer p-2">
+            @if (pg.ContentType.StartsWith("image/", StringComparison.Ordinal))
+            {
+                <a href="@FileUrl(NoteId, pg)" target="_blank" rel="noopener" title="Open full size">
+                    <img src="@FileUrl(NoteId, pg)" alt="Original of pg @pg.PageNumber: @pg.FileName" loading="lazy" />
+                </a>
+            }
+            else if (pg.ContentType == "application/pdf")
+            {
+                <iframe src="@FileUrl(NoteId, pg)" title="Original PDF: @pg.FileName"></iframe>
+            }
+            else
+            {
+                <div class="text-center p-5">
+                    <div class="fs-1" aria-hidden="true">📄</div>
+                    <p class="mb-2">@pg.FileName</p>
+                    <p class="small text-body-secondary">Word documents cannot be previewed in the browser.</p>
+                    <a class="btn btn-outline-primary" href="@FileUrl(NoteId, pg)" download="@pg.FileName">Download original</a>
+                </div>
+            }
+        </div>
+        <div class="small text-body-secondary mt-1">@pg.FileName · @(pg.SizeBytes / 1024) KB</div>
+    };
+
+    private RenderFragment RenderEditor(PageDto pg) => __builder =>
+    {
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <StatusBadge Status="pg.Status" />
+            @if (pg.IsEdited)
+            {
+                <span class="badge text-bg-warning" title="This pg contains your corrections">Edited</span>
+            }
+            @if (IsDirty(pg))
+            {
+                <span class="badge text-bg-primary">Unsaved changes</span>
+            }
+        </div>
+
+        @if (pg.Status == ProcessingStatus.Failed && !string.IsNullOrEmpty(pg.Error))
+        {
+            <div class="alert alert-warning small">@pg.Error You can still type the notes yourself below.</div>
+        }
+
+        @if (IsProcessing(pg.Status) && string.IsNullOrEmpty(pg.Text))
+        {
+            <div class="d-flex align-items-center gap-2 text-body-secondary p-4">
+                <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                Reading the pg with AI… this usually takes a few seconds.
+            </div>
+        }
+        else
+        {
+            <label class="visually-hidden" for="editor-@pg.Id">Notes text for pg @pg.PageNumber</label>
+            <textarea @key="(pg.Id, editorVersion)" id="editor-@pg.Id" class="form-control notes-editor" spellcheck="true"
+                      value="@GetText(pg)" @onchange="e => SetText(pg, e.Value?.ToString())"></textarea>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <button class="btn btn-primary" type="button" disabled="@(Busy || !IsDirty(pg))" @onclick="() => SaveTextAsync(pg, GetText(pg))">Save corrections</button>
+                <button class="btn btn-outline-secondary" type="button" disabled="@(!IsDirty(pg))" @onclick="() => Discard(pg)">Discard changes</button>
+                @if (pg.IsEdited && pg.ExtractedText is not null)
+                {
+                    <button class="btn btn-outline-secondary" type="button" disabled="@Busy" @onclick="() => SaveTextAsync(pg, pg.ExtractedText)">Revert to AI text</button>
+                }
+                <button class="btn btn-outline-secondary ms-auto" type="button" disabled="@(Busy || IsProcessing(pg.Status))" @onclick="() => ReprocessAsync(pg)"
+                        title="Run text extraction again. Your saved corrections are kept.">
+                    🔄 Re-run extraction
+                </button>
+            </div>
+        }
+    };
+
+    public void Dispose()
+    {
+        disposed.Cancel();
+        disposed.Dispose();
+    }
+}

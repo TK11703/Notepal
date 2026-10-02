@@ -1,0 +1,23 @@
+@if (TotalPages > 1)
+{
+    <nav aria-label="Pagination">
+        <ul class="pagination pagination-sm">
+            <li class="page-item @(Page <= 1 ? "disabled" : null)">
+                <button class="page-link" @onclick="() => PageChanged.InvokeAsync(Page - 1)" disabled="@(Page <= 1)">Previous</button>
+            </li>
+            <li class="page-item disabled"><span class="page-link">Page @Page of @TotalPages</span></li>
+            <li class="page-item @(Page >= TotalPages ? "disabled" : null)">
+                <button class="page-link" @onclick="() => PageChanged.InvokeAsync(Page + 1)" disabled="@(Page >= TotalPages)">Next</button>
+            </li>
+        </ul>
+    </nav>
+}
+
+@code {
+    [Parameter] public int Page { get; set; }
+    [Parameter] public int PageSize { get; set; }
+    [Parameter] public int Total { get; set; }
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+
+    private int TotalPages => PageSize <= 0 ? 0 : (Total + PageSize - 1) / PageSize;
+}

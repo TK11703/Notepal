@@ -1,0 +1,195 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Notepal.Shared;
+
+namespace Notepal.Api.Tests;
+
+public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<NotepalApiFactory>
+{
+    private static string NewUser() => Guid.NewGuid().ToString();
+
+    [Fact]
+    public async Task Requests_without_a_user_are_rejected()
+    {
+        var response = await factory.CreateClientFor(null).GetAsync("/api/notes");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Requests_without_the_api_scope_are_forbidden()
+    {
+        var response = await factory.CreateClientFor(NewUser(), scopes: "User.Read").GetAsync("/api/notes");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_endpoint_is_anonymous()
+    {
+        var response = await factory.CreateClientFor(null).GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Uploaded_image_is_ocrd_stored_and_downloadable()
+    {
+        var client = factory.CreateClientFor(NewUser());
+
+        var created = await UploadAsync(client, "Biology", ("board.png", TestFiles.Png));
+        Assert.Equal("Biology", created.Title);
+        var page = Assert.Single(created.Pages);
+        Assert.Equal("image/png", page.ContentType);
+
+        var note = await WaitForProcessingAsync(client, created.Id);
+        Assert.Equal(ProcessingStatus.Completed, note.Status);
+        Assert.Contains("photosynthesis", note.Pages[0].Text);
+
+        var original = await client.GetAsync($"/api/notes/{note.Id}/pages/{page.Id}/original");
+        original.EnsureSuccessStatusCode();
+        Assert.Equal("image/png", original.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(TestFiles.Png, await original.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task Pdf_and_docx_text_is_extracted()
+    {
+        var client = factory.CreateClientFor(NewUser());
+
+        var created = await UploadAsync(client, "Docs",
+            ("lecture.pdf", TestFiles.Pdf("Mitochondria is the powerhouse of the cell")),
+            ("summary.docx", TestFiles.Docx("Chapter one summary", "Krebs cycle overview")));
+
+        var note = await WaitForProcessingAsync(client, created.Id);
+        Assert.Equal(ProcessingStatus.Completed, note.Status);
+        Assert.Contains("Mitochondria", note.Pages.Single(p => p.FileName == "lecture.pdf").Text);
+        Assert.Contains("Krebs cycle", note.Pages.Single(p => p.FileName == "summary.docx").Text);
+    }
+
+    [Fact]
+    public async Task Files_whose_content_does_not_match_the_extension_are_rejected()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        using var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent("<script>alert(1)</script>"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        content.Add(file, "files", "evil.png");
+
+        var response = await client.PostAsync("/api/notes", content);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Users_can_only_see_and_change_their_own_notes()
+    {
+        var alice = factory.CreateClientFor(NewUser());
+        var bob = factory.CreateClientFor(NewUser());
+
+        var note = await WaitForProcessingAsync(alice, (await UploadAsync(alice, "Alice secret zebra", ("a.png", TestFiles.Png))).Id);
+        var pageId = note.Pages[0].Id;
+
+        var bobList = await bob.GetFromJsonAsync<PagedResult<NoteSummaryDto>>("/api/notes");
+        Assert.Equal(0, bobList!.Total);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.GetAsync($"/api/notes/{note.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.GetAsync($"/api/notes/{note.Id}/pages/{pageId}/original")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteRequest("hacked"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/text", new UpdatePageTextRequest("hacked"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PostAsync($"/api/notes/{note.Id}/pages/{pageId}/reprocess", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.DeleteAsync($"/api/notes/{note.Id}")).StatusCode);
+
+        var bobSearch = await bob.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=zebra");
+        Assert.Empty(bobSearch!.Items);
+        var bobTextSearch = await bob.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=photosynthesis");
+        Assert.Empty(bobTextSearch!.Items);
+
+        var aliceNote = await alice.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}");
+        Assert.Equal("Alice secret zebra", aliceNote!.Title);
+        Assert.Equal(note.Pages[0].Text, aliceNote.Pages[0].Text);
+    }
+
+    [Fact]
+    public async Task Corrections_are_saved_and_searchable()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var note = await WaitForProcessingAsync(client, (await UploadAsync(client, "Chemistry", ("c.png", TestFiles.Png))).Id);
+        var page = note.Pages[0];
+
+        var update = await client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{page.Id}/text",
+            new UpdatePageTextRequest("Corrected: the electrons travel through the transport chain"));
+        update.EnsureSuccessStatusCode();
+        var updated = await update.Content.ReadFromJsonAsync<PageDto>();
+        Assert.True(updated!.IsEdited);
+        Assert.Equal(page.ExtractedText, updated.ExtractedText);
+
+        var results = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=electron");
+        var hit = Assert.Single(results!.Items);
+        Assert.Equal(note.Id, hit.NoteId);
+        Assert.Contains("\u27E6electrons\u27E7", hit.Snippet);
+
+        // Old OCR text no longer matches because the corrected text replaces it.
+        var stale = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=photosynthesis");
+        Assert.Empty(stale!.Items);
+
+        // Reverting to the extracted text clears the correction.
+        var revert = await client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{page.Id}/text", new UpdatePageTextRequest(page.ExtractedText!));
+        Assert.False((await revert.Content.ReadFromJsonAsync<PageDto>())!.IsEdited);
+    }
+
+    [Fact]
+    public async Task Search_matches_titles_and_partial_words()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        await WaitForProcessingAsync(client, (await UploadAsync(client, "Quarterly planning", ("q.png", TestFiles.Png))).Id);
+
+        var byTitle = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=planning");
+        Assert.Single(byTitle!.Items);
+
+        var partial = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=photosynth");
+        Assert.Single(partial!.Items);
+
+        var none = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=100%25_");
+        Assert.Empty(none!.Items);
+    }
+
+    [Fact]
+    public async Task Notes_can_be_renamed_and_deleted()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var note = await UploadAsync(client, "Draft", ("d.png", TestFiles.Png));
+
+        var renamed = await client.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteRequest("Final"));
+        Assert.Equal("Final", (await renamed.Content.ReadFromJsonAsync<NoteDto>())!.Title);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/notes/{note.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/notes/{note.Id}")).StatusCode);
+    }
+
+    private static async Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files)
+    {
+        using var content = new MultipartFormDataContent { { new StringContent(title), "title" } };
+        foreach (var (name, data) in files)
+        {
+            content.Add(new ByteArrayContent(data), "files", name);
+        }
+
+        var response = await client.PostAsync("/api/notes", content);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<NoteDto>())!;
+    }
+
+    private static async Task<NoteDto> WaitForProcessingAsync(HttpClient client, Guid noteId)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var note = await client.GetFromJsonAsync<NoteDto>($"/api/notes/{noteId}");
+            if (note!.Status is ProcessingStatus.Completed or ProcessingStatus.Failed)
+            {
+                return note;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException("Note was not processed in time.");
+    }
+}

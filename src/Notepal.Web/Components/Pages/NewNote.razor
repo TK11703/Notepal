@@ -1,0 +1,188 @@
+@page "/notes/new"
+@attribute [Authorize]
+@inherits NotepalComponentBase
+
+<PageTitle>New note · Notepal</PageTitle>
+
+<h1 class="h3 mb-3">New note</h1>
+
+<ApiErrorAlert @bind-Message="ErrorMessage" />
+
+<div class="mb-3" style="max-width: 40rem;">
+    <label class="form-label" for="title">Title</label>
+    <input id="title" class="form-control" maxlength="200" placeholder="Optional – defaults to the file name" @bind="title" />
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button type="button" role="tab" class="nav-link @(source == Source.Upload ? "active" : null)" aria-selected="@(source == Source.Upload)" @onclick="() => source = Source.Upload">⬆️ Upload files</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button type="button" role="tab" class="nav-link @(source == Source.Camera ? "active" : null)" aria-selected="@(source == Source.Camera)" @onclick="() => source = Source.Camera">📷 Camera</button>
+    </li>
+</ul>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="@(source == Source.Upload ? null : "d-none")">
+            <label class="form-label" for="files">Images (JPEG, PNG, WebP, GIF), PDF or Word (.docx) files – up to @(UploadLimits.MaxFileBytes / 1024 / 1024) MB each</label>
+            <InputFile id="files" class="form-control" multiple accept="@UploadLimits.AcceptAttribute" OnChange="OnFilesSelectedAsync" />
+        </div>
+
+        <div class="@(source == Source.Camera ? null : "d-none")">
+            <CameraCapture @ref="camera" OnCaptured="OnCapturedAsync" />
+            <hr />
+            <label class="form-label" for="device-camera">Or use your device's camera app</label>
+            <InputFile id="device-camera" class="form-control" accept="image/*" capture="environment" OnChange="OnFilesSelectedAsync" />
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <h2 class="h6">Pages (@items.Count / @UploadLimits.MaxFilesPerNote)</h2>
+        @if (items.Count == 0)
+        {
+            <p class="text-body-secondary small">Nothing added yet. Each file or photo becomes a page of the note, in this order.</p>
+        }
+        else
+        {
+            <ol class="list-group list-group-numbered mb-3">
+                @foreach (var item in items)
+                {
+                    <li class="list-group-item d-flex align-items-center gap-2">
+                        @if (item.ThumbnailUrl is not null)
+                        {
+                            <img class="upload-thumb" src="@item.ThumbnailUrl" alt="" />
+                        }
+                        else
+                        {
+                            <span class="upload-thumb d-inline-flex align-items-center justify-content-center fs-4">📄</span>
+                        }
+                        <div class="flex-grow-1 text-truncate">
+                            <div class="text-truncate">@item.FileName</div>
+                            <small class="text-body-secondary">@FormatSize(item.Data.Length)</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" aria-label="Remove @item.FileName" @onclick="() => RemoveAsync(item)">✕</button>
+                    </li>
+                }
+            </ol>
+        }
+
+        <button type="button" class="btn btn-primary w-100" disabled="@(items.Count == 0 || Busy)" @onclick="SaveAsync">
+            @if (Busy)
+            {
+                <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+                <span>Uploading…</span>
+            }
+            else
+            {
+                <span>Save note</span>
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    private enum Source { Upload, Camera }
+
+    private sealed record PendingFile(string FileName, string ContentType, byte[] Data, string? ThumbnailUrl, string? ObjectUrl);
+
+    private readonly List<PendingFile> items = [];
+    private CameraCapture? camera;
+    private Source source = Source.Upload;
+    private string? title;
+    private int photoCounter;
+
+    private async Task OnFilesSelectedAsync(InputFileChangeEventArgs e)
+    {
+        ErrorMessage = null;
+        var problems = new List<string>();
+
+        foreach (var file in e.GetMultipleFiles(UploadLimits.MaxFilesPerNote))
+        {
+            if (items.Count >= UploadLimits.MaxFilesPerNote)
+            {
+                problems.Add($"A note can contain at most {UploadLimits.MaxFilesPerNote} pages.");
+                break;
+            }
+
+            var extension = Path.GetExtension(file.Name);
+            if (!UploadLimits.AllowedTypes.TryGetValue(extension, out var contentType))
+            {
+                problems.Add($"'{file.Name}' is not a supported file type.");
+                continue;
+            }
+
+            if (file.Size == 0 || file.Size > UploadLimits.MaxFileBytes)
+            {
+                problems.Add($"'{file.Name}' must be smaller than {UploadLimits.MaxFileBytes / 1024 / 1024} MB.");
+                continue;
+            }
+
+            try
+            {
+                // Read immediately: browser file references become invalid once the input's selection changes.
+                await using var stream = file.OpenReadStream(UploadLimits.MaxFileBytes);
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+
+                string? thumbnail = null;
+                if (contentType.StartsWith("image/", StringComparison.Ordinal))
+                {
+                    var resized = await file.RequestImageFileAsync("image/jpeg", 128, 128);
+                    await using var thumbStream = resized.OpenReadStream(UploadLimits.MaxFileBytes);
+                    using var thumbBuffer = new MemoryStream();
+                    await thumbStream.CopyToAsync(thumbBuffer);
+                    thumbnail = $"data:image/jpeg;base64,{Convert.ToBase64String(thumbBuffer.ToArray())}";
+                }
+
+                items.Add(new PendingFile(file.Name, contentType, buffer.ToArray(), thumbnail, null));
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
+            {
+                problems.Add($"Could not read '{file.Name}': {ex.Message}");
+            }
+        }
+
+        if (problems.Count > 0)
+        {
+            ErrorMessage = string.Join(" ", problems.Distinct());
+        }
+    }
+
+    private async Task OnCapturedAsync(CameraCapture.CapturedPhoto photo)
+    {
+        if (items.Count >= UploadLimits.MaxFilesPerNote)
+        {
+            ErrorMessage = $"A note can contain at most {UploadLimits.MaxFilesPerNote} pages.";
+            await camera!.ReleaseAsync(photo.ObjectUrl);
+            return;
+        }
+
+        photoCounter++;
+        items.Add(new PendingFile($"photo-{DateTime.Now:yyyyMMdd-HHmmss}-{photoCounter}.jpg", "image/jpeg", photo.Data, photo.ObjectUrl, photo.ObjectUrl));
+    }
+
+    private async Task RemoveAsync(PendingFile item)
+    {
+        items.Remove(item);
+        if (item.ObjectUrl is not null && camera is not null)
+        {
+            await camera.ReleaseAsync(item.ObjectUrl);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        NoteDto? created = null;
+        var ok = await RunAsync(async () =>
+            created = await Api.CreateNoteAsync(title, items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList()));
+
+        if (ok && created is not null)
+        {
+            Navigation.NavigateTo($"notes/{created.Id}");
+        }
+    }
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB";
+}

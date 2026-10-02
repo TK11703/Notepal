@@ -1,0 +1,110 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-warning small">@error</div>
+    }
+
+    <video @ref="video" class="camera-preview @(running ? null : "d-none")" autoplay playsinline muted></video>
+
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        @if (running)
+        {
+            <button type="button" class="btn btn-primary" @onclick="CaptureAsync" disabled="@capturing">📸 Capture page</button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="StopAsync">Stop camera</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn-outline-primary" @onclick="StartAsync">🎥 Start camera</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EventCallback<CapturedPhoto> OnCaptured { get; set; }
+
+    private ElementReference video;
+    private IJSObjectReference? module;
+    private bool running;
+    private bool capturing;
+    private string? error;
+
+    private async Task<IJSObjectReference> ModuleAsync() =>
+        module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/camera.js");
+
+    private async Task StartAsync()
+    {
+        error = null;
+        try
+        {
+            await (await ModuleAsync()).InvokeVoidAsync("start", video);
+            running = true;
+        }
+        catch (JSException ex)
+        {
+            error = $"Could not start the camera: {ex.Message}";
+        }
+    }
+
+    private async Task StopAsync()
+    {
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("stop", video);
+        }
+
+        running = false;
+    }
+
+    private async Task CaptureAsync()
+    {
+        capturing = true;
+        error = null;
+        try
+        {
+            var js = await ModuleAsync();
+            var url = await js.InvokeAsync<string>("capture", video);
+            await using var blob = await js.InvokeAsync<IJSStreamReference>("getBlob", url);
+            await using var stream = await blob.OpenReadStreamAsync(UploadLimits.MaxFileBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            await OnCaptured.InvokeAsync(new CapturedPhoto(url, buffer.ToArray()));
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or IOException)
+        {
+            error = $"Could not capture the photo: {ex.Message}";
+        }
+        finally
+        {
+            capturing = false;
+        }
+    }
+
+    public async Task ReleaseAsync(string url)
+    {
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("release", url);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("stop", video);
+                await module.InvokeVoidAsync("releaseAll");
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    public sealed record CapturedPhoto(string ObjectUrl, byte[] Data);
+}

@@ -1,0 +1,89 @@
+name: Deploy to Azure
+
+# Required repository configuration (Settings > Secrets and variables > Actions):
+#   secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (federated credential for this repo)
+#              POSTGRES_ADMIN_PASSWORD
+#   variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
+#              (optional) AZURE_FOUNDRY_LOCATION
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      LOCATION: ${{ vars.AZURE_LOCATION }}
+      FOUNDRY_LOCATION: ${{ vars.AZURE_FOUNDRY_LOCATION || vars.AZURE_LOCATION }}
+      TAG: ${{ github.sha }}
+      API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
+      WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create resource group
+        run: az group create --name "$RG" --location "$LOCATION" --output none
+
+      - name: Deploy shared infrastructure
+        id: infra
+        env:
+          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          registry=$(az deployment group create \
+            --resource-group "$RG" \
+            --name notepal-infra \
+            --template-file infra/main.bicep \
+            --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
+                         foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+            --query properties.outputs.registryName.value --output tsv)
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "loginServer=$(az acr show --name "$registry" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
+
+      - name: Build images in ACR
+        env:
+          REGISTRY: ${{ steps.infra.outputs.registry }}
+        run: |
+          az acr build --registry "$REGISTRY" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
+          az acr build --registry "$REGISTRY" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
+
+      - name: Deploy container apps
+        id: apps
+        env:
+          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          LOGIN_SERVER: ${{ steps.infra.outputs.loginServer }}
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "$RG" \
+            --name notepal-apps \
+            --template-file infra/main.bicep \
+            --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
+                         foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+                         apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
+                         webImage="$LOGIN_SERVER/notepal-web:$TAG" \
+            --query properties.outputs --output json)
+          web_url=$(echo "$outputs" | jq -r .webUrl.value)
+          principal=$(echo "$outputs" | jq -r .webIdentityPrincipalId.value)
+          {
+            echo "### Notepal deployed"
+            echo "Web app: $web_url"
+            echo
+            echo "First deployment? Finish the Entra setup once with:"
+            echo '```'
+            echo "./infra/scripts/setup-entra.sh finalize $web_url $principal"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,68 @@
+@page "/search"
+@attribute [Authorize]
+@inherits NotepalComponentBase
+
+<PageTitle>Search · Notepal</PageTitle>
+
+<h1 class="h3 mb-3">Search notes</h1>
+
+<form class="mb-4" role="search" @onsubmit="SubmitAsync">
+    <div class="input-group">
+        <input class="form-control" type="search" placeholder="Search your notes, e.g. photosynthesis or &quot;project kickoff&quot;" aria-label="Search terms" @bind="query" />
+        <button class="btn btn-primary" type="submit">Search</button>
+    </div>
+    <div class="form-text">Use quotes for phrases, <code>or</code> for alternatives and <code>-word</code> to exclude a word.</div>
+</form>
+
+<ApiErrorAlert @bind-Message="ErrorMessage" />
+
+@if (Busy)
+{
+    <div class="spinner-border" role="status"><span class="visually-hidden">Searching…</span></div>
+}
+else if (result is not null)
+{
+    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches") for “@Q”</p>
+    <div class="list-group mb-3">
+        @foreach (var hit in result.Items)
+        {
+            <a class="list-group-item list-group-item-action" href="notes/@hit.NoteId?page=@hit.PageNumber">
+                <div class="d-flex justify-content-between gap-2">
+                    <strong class="text-truncate">@hit.Title</strong>
+                    <small class="text-body-secondary text-nowrap">Page @hit.PageNumber · @hit.UpdatedAt.LocalDateTime.ToString("d")</small>
+                </div>
+                <div class="small mt-1"><HighlightedSnippet Text="@hit.Snippet" /></div>
+            </a>
+        }
+    </div>
+    <Pager Page="result.Page" PageSize="result.PageSize" Total="result.Total" PageChanged="LoadAsync" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Q { get; set; }
+
+    private string? query;
+    private PagedResult<SearchResultDto>? result;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        query = Q;
+        result = null;
+        if (!string.IsNullOrWhiteSpace(Q))
+        {
+            await LoadAsync(1);
+        }
+    }
+
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q!, page, PageSize));
+
+    private void SubmitAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            Navigation.NavigateTo($"search?q={Uri.EscapeDataString(query.Trim())}");
+        }
+    }
+}

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Notepal.Api/Notepal.Api.csproj" />
+    <Project Path="src/Notepal.Shared/Notepal.Shared.csproj" />
+    <Project Path="src/Notepal.Web/Notepal.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Notepal.Api.Tests/Notepal.Api.Tests.csproj" />
+  </Folder>
+</Solution>
