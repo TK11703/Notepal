@@ -164,6 +164,34 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/notes/{note.Id}")).StatusCode);
     }
 
+    [Fact]
+    public async Task Invalid_requests_return_validation_problems()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var note = await UploadAsync(client, "Valid", ("v.png", TestFiles.Png));
+
+        await AssertValidationProblemAsync(await client.GetAsync("/api/notes?pageSize=101"), "pageSize");
+        await AssertValidationProblemAsync(await client.GetAsync("/api/notes?page=0"), "page");
+        await AssertValidationProblemAsync(await client.GetAsync($"/api/search?q={new string('a', 201)}"), "q");
+        await AssertValidationProblemAsync(await client.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteRequest("  ")), "Title");
+        await AssertValidationProblemAsync(await client.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteRequest(new string('t', 201))), "Title");
+        await AssertValidationProblemAsync(
+            await client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{note.Pages[0].Id}/text", new UpdatePageTextRequest(null!)), "Text");
+
+        using var content = new MultipartFormDataContent { { new StringContent(new string('t', 201)), "title" } };
+        content.Add(new ByteArrayContent(TestFiles.Png), "files", "v.png");
+        await AssertValidationProblemAsync(await client.PostAsync("/api/notes", content), "title");
+    }
+
+    private static async Task AssertValidationProblemAsync(HttpResponseMessage response, string field)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblem>();
+        Assert.Contains(problem!.Errors.Keys, k => k.Equals(field, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed record ValidationProblem(Dictionary<string, string[]> Errors);
+
     private static async Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files)
     {
         using var content = new MultipartFormDataContent { { new StringContent(title), "title" } };

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Notepal.Shared;
 
 /// <summary>Processing state of a captured page (and, by aggregation, of a note).</summary>
@@ -39,9 +41,11 @@ public sealed record NoteDto(
     ProcessingStatus Status,
     IReadOnlyList<PageDto> Pages);
 
-public sealed record UpdateNoteRequest(string Title);
+public sealed record UpdateNoteRequest(
+    [Required, MaxLength(NoteLimits.MaxTitleLength)] string Title);
 
-public sealed record UpdatePageTextRequest(string Text);
+public sealed record UpdatePageTextRequest(
+    [Required(AllowEmptyStrings = true), MaxLength(NoteLimits.MaxTextLength)] string Text);
 
 public sealed record SearchResultDto(
     Guid NoteId,
@@ -52,6 +56,14 @@ public sealed record SearchResultDto(
     DateTimeOffset UpdatedAt);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+
+public static class NoteLimits
+{
+    public const int MaxTitleLength = 200;
+    public const int MaxTextLength = 1_000_000;
+    public const int MaxSearchLength = 200;
+    public const int MaxPageSize = 100;
+}
 
 public static class UploadLimits
 {

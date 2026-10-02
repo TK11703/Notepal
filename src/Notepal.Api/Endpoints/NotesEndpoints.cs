@@ -1,5 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using System.Net.Mime;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using Notepal.Api.Auth;
 using Notepal.Api.Data;
@@ -10,8 +11,7 @@ namespace Notepal.Api.Endpoints;
 
 public static class NotesEndpoints
 {
-    private const int MaxTitleLength = 200;
-    private const int MaxTextLength = 1_000_000;
+    private const int MaxFileNameLength = 260;
 
     public static RouteGroupBuilder MapNotesEndpoints(this RouteGroupBuilder api)
     {
@@ -29,87 +29,41 @@ public static class NotesEndpoints
         return api;
     }
 
-    private static async Task<IResult> ListNotes(NotepalDbContext db, ICurrentUser user, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    private static async Task<IResult> ListNotes(
+        NotesRepository notes,
+        ICurrentUser user,
+        [Range(1, int.MaxValue)] int page = 1,
+        [Range(1, NoteLimits.MaxPageSize)] int pageSize = 20,
+        CancellationToken ct = default) =>
+        Results.Ok(await notes.ListNotesAsync(user.UserId!, page, pageSize, ct));
+
+    private static async Task<IResult> GetNote(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct) =>
+        await notes.GetNoteAsync(user.UserId!, noteId, ct) is { } note ? Results.Ok(note) : Results.NotFound();
+
+    private static async Task<IResult> CreateNote(
+        [FromForm, MaxLength(NoteLimits.MaxTitleLength)] string? title,
+        IFormFileCollection files,
+        NotesRepository notes,
+        ICurrentUser user,
+        ProcessingQueue queue,
+        CancellationToken ct)
     {
-        var ownerId = user.UserId!;
-        (page, pageSize) = Paging.Normalize(page, pageSize);
-
-        var query = db.Notes.Where(n => n.OwnerId == ownerId);
-        var total = await query.CountAsync(ct);
-        var rows = await query
-            .OrderByDescending(n => n.UpdatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(n => new
-            {
-                n.Id,
-                n.Title,
-                n.CreatedAt,
-                n.UpdatedAt,
-                Statuses = n.Pages.Select(p => p.Status).ToList(),
-                Preview = n.Pages.OrderBy(p => p.PageNumber)
-                    .Select(p => (p.EditedText ?? p.ExtractedText)!.Substring(0, 240))
-                    .FirstOrDefault(),
-            })
-            .ToListAsync(ct);
-
-        var items = rows.Select(r => new NoteSummaryDto(
-                r.Id, r.Title, r.CreatedAt, r.UpdatedAt, r.Statuses.Count, Mapping.AggregateStatus(r.Statuses), r.Preview))
-            .ToList();
-
-        return Results.Ok(new PagedResult<NoteSummaryDto>(items, total, page, pageSize));
-    }
-
-    private static async Task<IResult> GetNote(Guid noteId, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
-    {
-        var ownerId = user.UserId!;
-        var note = await db.Notes.AsNoTracking().Include(n => n.Pages)
-            .FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
-
-        return note is null ? Results.NotFound() : Results.Ok(note.ToDto());
-    }
-
-    private static async Task<IResult> CreateNote(HttpRequest request, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
-    {
-        var ownerId = user.UserId!;
-        if (!request.HasFormContentType)
-        {
-            return Results.Problem("Expected a multipart/form-data request.", statusCode: StatusCodes.Status415UnsupportedMediaType);
-        }
-
-        var form = await request.ReadFormAsync(ct);
-        var files = form.Files;
+        // File contents can't be checked declaratively: sizes and signatures are validated here.
         if (files.Count == 0)
         {
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = ["Upload at least one file."] });
+            return FilesProblem("Upload at least one file.");
         }
 
         if (files.Count > UploadLimits.MaxFilesPerNote)
         {
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = [$"A note can contain at most {UploadLimits.MaxFilesPerNote} files."] });
+            return FilesProblem($"A note can contain at most {UploadLimits.MaxFilesPerNote} files.");
         }
-
-        var now = DateTimeOffset.UtcNow;
-        var title = form["title"].ToString().Trim();
-        if (string.IsNullOrEmpty(title))
-        {
-            title = files.Count == 1 ? Path.GetFileNameWithoutExtension(files[0].FileName) : $"Note {now:yyyy-MM-dd HH:mm}";
-        }
-
-        var note = new Note
-        {
-            Id = Guid.NewGuid(),
-            OwnerId = ownerId,
-            Title = Truncate(title, MaxTitleLength),
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
 
         var errors = new List<string>();
-        var number = 1;
+        var pages = new List<NewPage>(files.Count);
         foreach (var file in files)
         {
-            var fileName = Truncate(Path.GetFileName(file.FileName), 260);
+            var fileName = Truncate(Path.GetFileName(file.FileName), MaxFileNameLength);
             if (file.Length == 0 || file.Length > UploadLimits.MaxFileBytes)
             {
                 errors.Add($"'{fileName}' must be between 1 byte and {UploadLimits.MaxFileBytes / (1024 * 1024)} MB.");
@@ -129,72 +83,40 @@ public static class NotesEndpoints
                 continue;
             }
 
-            note.Pages.Add(new Page
-            {
-                Id = Guid.NewGuid(),
-                OwnerId = ownerId,
-                PageNumber = number++,
-                FileName = fileName,
-                ContentType = contentType,
-                SizeBytes = data.LongLength,
-                Status = ProcessingStatus.Pending,
-                UpdatedAt = now,
-                Content = new PageContent { Data = data },
-            });
+            pages.Add(new NewPage(fileName, contentType, data));
         }
 
         if (errors.Count > 0)
         {
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = [.. errors] });
+            return FilesProblem([.. errors]);
         }
 
-        db.Notes.Add(note);
-        await db.SaveChangesAsync(ct);
+        title = title?.Trim();
+        if (string.IsNullOrEmpty(title))
+        {
+            title = files.Count == 1
+                ? Truncate(Path.GetFileNameWithoutExtension(files[0].FileName), NoteLimits.MaxTitleLength)
+                : $"Note {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm}";
+        }
 
+        var note = await notes.CreateNoteAsync(user.UserId!, title, pages, ct);
         foreach (var page in note.Pages)
         {
             queue.Enqueue(page.Id);
         }
 
-        return Results.Created($"/api/notes/{note.Id}", note.ToDto());
+        return Results.Created($"/api/notes/{note.Id}", note);
     }
 
-    private static async Task<IResult> UpdateNote(Guid noteId, UpdateNoteRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
+    private static async Task<IResult> UpdateNote(Guid noteId, UpdateNoteRequest body, NotesRepository notes, ICurrentUser user, CancellationToken ct) =>
+        await notes.RenameNoteAsync(user.UserId!, noteId, body.Title.Trim(), ct) is { } note ? Results.Ok(note) : Results.NotFound();
+
+    private static async Task<IResult> DeleteNote(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct) =>
+        await notes.DeleteNoteAsync(user.UserId!, noteId, ct) ? Results.NoContent() : Results.NotFound();
+
+    private static async Task<IResult> GetOriginal(Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, HttpContext http, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
-        var title = body.Title?.Trim();
-        if (string.IsNullOrEmpty(title) || title.Length > MaxTitleLength)
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["title"] = [$"Title is required and must be at most {MaxTitleLength} characters."] });
-        }
-
-        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
-        if (note is null)
-        {
-            return Results.NotFound();
-        }
-
-        note.Title = title;
-        note.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(note.ToDto());
-    }
-
-    private static async Task<IResult> DeleteNote(Guid noteId, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
-    {
-        var ownerId = user.UserId!;
-        var deleted = await db.Notes.Where(n => n.Id == noteId && n.OwnerId == ownerId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? Results.NotFound() : Results.NoContent();
-    }
-
-    private static async Task<IResult> GetOriginal(Guid noteId, Guid pageId, NotepalDbContext db, ICurrentUser user, HttpContext http, CancellationToken ct)
-    {
-        var ownerId = user.UserId!;
-        var original = await db.Pages
-            .Where(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId)
-            .Select(p => new { p.FileName, p.ContentType, p.UpdatedAt, Data = p.Content!.Data })
-            .FirstOrDefaultAsync(ct);
-
+        var original = await notes.GetOriginalAsync(user.UserId!, noteId, pageId, ct);
         if (original is null)
         {
             return Results.NotFound();
@@ -211,57 +133,26 @@ public static class NotesEndpoints
         return Results.Bytes(original.Data, original.ContentType);
     }
 
-    private static async Task<IResult> UpdatePageText(Guid noteId, Guid pageId, UpdatePageTextRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
+    private static async Task<IResult> UpdatePageText(Guid noteId, Guid pageId, UpdatePageTextRequest body, NotesRepository notes, ICurrentUser user, CancellationToken ct) =>
+        await notes.UpdatePageTextAsync(user.UserId!, noteId, pageId, body.Text, ct) is { } page ? Results.Ok(page) : Results.NotFound();
+
+    private static async Task<IResult> ReprocessPage(Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
-        if (body.Text is null || body.Text.Length > MaxTextLength)
+        var (outcome, page) = await notes.ResetForReprocessingAsync(user.UserId!, noteId, pageId, ct);
+        switch (outcome)
         {
-            return Results.ValidationProblem(new Dictionary<string, string[]> { ["text"] = [$"Text is required and must be at most {MaxTextLength} characters."] });
+            case ReprocessOutcome.NotFound:
+                return Results.NotFound();
+            case ReprocessOutcome.AlreadyProcessing:
+                return Results.Problem("The page is already being processed.", statusCode: StatusCodes.Status409Conflict);
+            default:
+                queue.Enqueue(pageId);
+                return Results.Accepted(value: page);
         }
-
-        var page = await db.Pages.Include(p => p.Note)
-            .FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId, ct);
-        if (page is null)
-        {
-            return Results.NotFound();
-        }
-
-        // Saving text identical to the extraction clears the correction so future re-processing shows through.
-        page.EditedText = string.Equals(body.Text, page.ExtractedText, StringComparison.Ordinal) ? null : body.Text;
-        page.UpdatedAt = page.Note.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(page.ToDto());
     }
 
-    private static async Task<IResult> ReprocessPage(Guid noteId, Guid pageId, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
-    {
-        var ownerId = user.UserId!;
-        var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId, ct);
-        if (page is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (page.Status is ProcessingStatus.Pending or ProcessingStatus.Processing)
-        {
-            return Results.Conflict(new { message = "The page is already being processed." });
-        }
-
-        page.Status = ProcessingStatus.Pending;
-        page.Attempts = 0;
-        page.Error = null;
-        page.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
-        queue.Enqueue(page.Id);
-
-        return Results.Accepted(value: page.ToDto());
-    }
+    private static IResult FilesProblem(params string[] errors) =>
+        Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = errors });
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
-}
-
-internal static class Paging
-{
-    public static (int Page, int PageSize) Normalize(int page, int pageSize) =>
-        (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 }

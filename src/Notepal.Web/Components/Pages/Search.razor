@@ -8,7 +8,7 @@
 
 <form class="mb-4" role="search" @onsubmit="SubmitAsync">
     <div class="input-group">
-        <input class="form-control" type="search" placeholder="Search your notes, e.g. photosynthesis or &quot;project kickoff&quot;" aria-label="Search terms" @bind="query" />
+        <input class="form-control" type="search" placeholder="Search your notes, e.g. photosynthesis or &quot;project kickoff&quot;" aria-label="Search terms" maxlength="@NoteLimits.MaxSearchLength" @bind="query" />
         <button class="btn btn-primary" type="submit">Search</button>
     </div>
     <div class="form-text">Use quotes for phrases, <code>or</code> for alternatives and <code>-word</code> to exclude a word.</div>

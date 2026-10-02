@@ -1,9 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Identity.Web;
+using Npgsql;
 using Notepal.Api.Auth;
 using Notepal.Api.Data;
 using Notepal.Api.Endpoints;
@@ -15,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+builder.Services.AddValidation();
 builder.Services.AddHealthChecks();
 
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = UploadLimits.MaxRequestBytes);
@@ -42,10 +42,13 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
-builder.Services.AddDbContext<NotepalDbContext>(options => options
-    .UseNpgsql(builder.Configuration.GetConnectionString("Notepal"))
-    // Page content is only ever reached through the (filtered) Page entity.
-    .ConfigureWarnings(w => w.Ignore(CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning)));
+builder.Services.AddSingleton(sp => NpgsqlDataSource.Create(
+    sp.GetRequiredService<IConfiguration>().GetConnectionString("Notepal")
+    ?? throw new InvalidOperationException("ConnectionStrings:Notepal is not configured.")));
+DapperConfiguration.Apply();
+builder.Services.AddSingleton<DatabaseMigrator>();
+builder.Services.AddSingleton<NotesRepository>();
+builder.Services.AddSingleton<PageWorkRepository>();
 
 builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection(OcrOptions.SectionName));
 if (builder.Configuration.GetSection(OcrOptions.SectionName).Get<OcrOptions>()?.IsConfigured == true)
@@ -57,7 +60,7 @@ else
     builder.Services.AddSingleton<IOcrClient, UnconfiguredOcrClient>();
 }
 
-builder.Services.AddScoped<TextExtractionService>();
+builder.Services.AddSingleton<TextExtractionService>();
 builder.Services.AddSingleton<ProcessingQueue>();
 builder.Services.AddHostedService<PageProcessingService>();
 
@@ -65,8 +68,7 @@ var app = builder.Build();
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
-    await using var scope = app.Services.CreateAsyncScope();
-    await scope.ServiceProvider.GetRequiredService<NotepalDbContext>().Database.MigrateAsync();
+    await app.Services.GetRequiredService<DatabaseMigrator>().MigrateAsync();
 }
 
 app.UseForwardedHeaders();

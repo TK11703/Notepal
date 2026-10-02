@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Notepal.Api.Data;
 using Notepal.Api.Ocr;
 using Notepal.Shared;
@@ -11,11 +10,13 @@ namespace Notepal.Api.Processing;
 /// </summary>
 public sealed class PageProcessingService(
     ProcessingQueue queue,
-    IServiceScopeFactory scopeFactory,
+    PageWorkRepository pages,
+    TextExtractionService extractor,
     ILogger<PageProcessingService> logger) : BackgroundService
 {
     private const int MaxConcurrency = 2;
     private const int MaxAttempts = 3;
+    private const int MaxErrorLength = 2000;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -44,14 +45,7 @@ public sealed class PageProcessingService(
     {
         try
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<NotepalDbContext>();
-            var ids = await db.Pages.IgnoreQueryFilters()
-                .Where(p => p.Status == ProcessingStatus.Pending || p.Status == ProcessingStatus.Processing)
-                .OrderBy(p => p.UpdatedAt)
-                .Select(p => p.Id)
-                .ToListAsync(cancellationToken);
-
+            var ids = await pages.GetUnfinishedPageIdsAsync(cancellationToken);
             foreach (var id in ids)
             {
                 queue.Enqueue(id);
@@ -70,49 +64,38 @@ public sealed class PageProcessingService(
 
     internal async Task ProcessAsync(Guid pageId, CancellationToken cancellationToken)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<NotepalDbContext>();
-        var extractor = scope.ServiceProvider.GetRequiredService<TextExtractionService>();
-
-        // The worker runs outside of a user request, so it bypasses the per-user filter and works on a single page id.
-        var page = await db.Pages.IgnoreQueryFilters().Include(p => p.Content).FirstOrDefaultAsync(p => p.Id == pageId, cancellationToken);
-        if (page?.Content is null || page.Status is ProcessingStatus.Completed or ProcessingStatus.Failed)
+        var work = await pages.TryStartAsync(pageId, cancellationToken);
+        if (work is null)
         {
             return;
         }
 
-        page.Status = ProcessingStatus.Processing;
-        page.Attempts++;
-        page.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-
+        string text;
         try
         {
-            var text = await extractor.ExtractAsync(page.Content.Data, page.ContentType, page.FileName, cancellationToken);
-            page.ExtractedText = text;
-            page.Status = ProcessingStatus.Completed;
-            page.Error = null;
+            text = await extractor.ExtractAsync(work.Data, work.ContentType, work.FileName, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Leave as Processing; it is re-queued on the next start.
+            // Left as Processing; it is re-queued on the next start.
             throw;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Text extraction failed for page {PageId} (attempt {Attempt})", page.Id, page.Attempts);
-            var retry = ex is not (OcrUnavailableException or NotSupportedException) && page.Attempts < MaxAttempts;
-            page.Status = retry ? ProcessingStatus.Pending : ProcessingStatus.Failed;
-            page.Error = Truncate(ex is OcrUnavailableException ? ex.Message : $"Text extraction failed: {ex.Message}", 2000);
+            logger.LogWarning(ex, "Text extraction failed for page {PageId} (attempt {Attempt})", pageId, work.Attempts);
+            var retry = ex is not (OcrUnavailableException or NotSupportedException) && work.Attempts < MaxAttempts;
+            var error = ex is OcrUnavailableException ? ex.Message : $"Text extraction failed: {ex.Message}";
+            await pages.FailAsync(pageId, retry ? ProcessingStatus.Pending : ProcessingStatus.Failed, Truncate(error, MaxErrorLength), CancellationToken.None);
+
+            if (retry)
+            {
+                _ = RequeueLaterAsync(pageId, TimeSpan.FromSeconds(10 * work.Attempts), cancellationToken);
+            }
+
+            return;
         }
 
-        page.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(CancellationToken.None);
-
-        if (page.Status == ProcessingStatus.Pending)
-        {
-            _ = RequeueLaterAsync(page.Id, TimeSpan.FromSeconds(10 * page.Attempts), cancellationToken);
-        }
+        await pages.CompleteAsync(pageId, text, CancellationToken.None);
     }
 
     private async Task RequeueLaterAsync(Guid pageId, TimeSpan delay, CancellationToken cancellationToken)

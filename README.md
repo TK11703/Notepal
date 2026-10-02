@@ -18,7 +18,7 @@ side by side, and search everything you have captured. Every user only ever sees
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
-  scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
+  scopes every SQL statement to the caller's object id (`oid`).
 - **Light / dark / auto theme** toggle (Bootstrap 5.3 colour modes, remembered per browser).
 
 ## Architecture
@@ -29,7 +29,7 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
                                    ▼  (internal ingress only, bearer token)
                                Notepal.Api  (ASP.NET Core 10 minimal API)
                                    │                     │
-                         EF Core / Npgsql          Azure AI Foundry Agent Service
+                         Npgsql (plain SQL)        Azure AI Foundry Agent Service
                                    ▼                     (managed identity)
                           PostgreSQL Flexible Server
 ```
@@ -37,14 +37,15 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
 | Project | Purpose |
 | --- | --- |
 | `src/Notepal.Web` | Blazor Web App: sign-in, upload/camera, viewer/editor, search, theme. Proxies original files from the API. |
-| `src/Notepal.Api` | REST API, EF Core model + migrations, upload validation (extension **and** file signature), background text extraction, search. |
-| `src/Notepal.Shared` | DTOs and upload limits shared by both apps. |
+| `src/Notepal.Api` | Minimal API with built-in validation, plain SQL data access (Npgsql) + embedded SQL migrations (`Data/Migrations/*.sql`), upload validation (extension **and** file signature), background text extraction, search. |
+| `src/Notepal.Shared` | DTOs (with validation attributes) and limits shared by both apps. |
 | `tests/Notepal.Api.Tests` | Integration tests (WebApplicationFactory + Testcontainers PostgreSQL) incl. cross-user isolation. |
 | `infra/` | Bicep for Azure and the Entra ID setup script. |
 
 ### API
 
-All endpoints (except `/healthz`) require a token with the `access_as_user` scope.
+All endpoints (except `/healthz`) require a token with the `access_as_user` scope. Invalid input returns `400` with a
+validation problem details body.
 
 | Method & route | Description |
 | --- | --- |
@@ -80,7 +81,7 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI.
    dotnet user-secrets set "NotepalApi:Scopes:0" "api://<api-client-id>/access_as_user"
    ```
 5. Run both apps (`dotnet run --launch-profile https` in `src/Notepal.Api` and `src/Notepal.Web`) and open
-   <https://localhost:7137>. The API applies EF Core migrations on start-up.
+   <https://localhost:7137>. The API applies pending SQL migrations on start-up.
 
 Without `Ocr:ProjectEndpoint` everything works except image OCR: such pages are marked *Failed* with an explanation
 and you can type the notes yourself.
