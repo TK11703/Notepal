@@ -90,7 +90,7 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
         using (response)
         {
             var problem = await ReadProblemAsync(response, ct);
-            logger.LogWarning("Notepal API {Method} {Path} failed with {Status}: {Problem}", method, path, (int)response.StatusCode, problem);
+            logger.LogWarning("Notepal API {Method} request failed with {Status}", method, (int)response.StatusCode);
             throw new ApiException(response.StatusCode, problem);
         }
     }
