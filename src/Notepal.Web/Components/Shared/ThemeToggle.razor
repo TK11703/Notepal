@@ -1,0 +1,28 @@
+@inject IJSRuntime JS
+
+<button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Theme: @Label (click to change)" aria-label="Change colour theme, current: @Label" @onclick="CycleAsync">
+    <span aria-hidden="true">@Icon</span> <span class="d-none d-md-inline">@Label</span>
+</button>
+
+@code {
+    private static readonly string[] Modes = ["light", "dark", "auto"];
+    private string mode = "auto";
+
+    private string Icon => mode switch { "light" => "☀️", "dark" => "🌙", _ => "🌓" };
+    private string Label => mode switch { "light" => "Light", "dark" => "Dark", _ => "Auto" };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            mode = await JS.InvokeAsync<string>("notepalTheme.get");
+            StateHasChanged();
+        }
+    }
+
+    private async Task CycleAsync()
+    {
+        var next = Modes[(Array.IndexOf(Modes, mode) + 1) % Modes.Length];
+        mode = await JS.InvokeAsync<string>("notepalTheme.set", next);
+    }
+}

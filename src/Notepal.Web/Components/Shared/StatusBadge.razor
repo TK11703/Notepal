@@ -1,0 +1,21 @@
+<span class="badge @CssClass">@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public ProcessingStatus Status { get; set; }
+
+    private string CssClass => Status switch
+    {
+        ProcessingStatus.Completed => "text-bg-success",
+        ProcessingStatus.Failed => "text-bg-danger",
+        ProcessingStatus.Processing => "text-bg-info",
+        _ => "text-bg-secondary",
+    };
+
+    private string Text => Status switch
+    {
+        ProcessingStatus.Completed => "Ready",
+        ProcessingStatus.Failed => "Failed",
+        ProcessingStatus.Processing => "Reading…",
+        _ => "Queued",
+    };
+}

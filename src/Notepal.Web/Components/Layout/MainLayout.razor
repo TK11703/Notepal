@@ -1,4 +1,5 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
 <div class="page">
     <div class="sidebar">
@@ -6,8 +7,14 @@
     </div>
 
     <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+        <div class="top-row px-4 gap-2">
+            <AuthorizeView>
+                <form class="top-search me-auto" role="search" @onsubmit="SearchAsync">
+                    <input class="form-control form-control-sm" type="search" placeholder="Search notes…" aria-label="Search notes" @bind="searchText" />
+                </form>
+            </AuthorizeView>
+            <ThemeToggle />
+            <LoginDisplay />
         </div>
 
         <article class="content px-4">
@@ -21,3 +28,15 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private string? searchText;
+
+    private void SearchAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            Navigation.NavigateTo($"search?q={Uri.EscapeDataString(searchText.Trim())}");
+        }
+    }
+}

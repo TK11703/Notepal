@@ -1,0 +1,35 @@
+@page "/notes"
+@attribute [Authorize]
+@inherits NotepalComponentBase
+
+<PageTitle>My notes · Notepal</PageTitle>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h3 mb-0">My notes</h1>
+    <a class="btn btn-primary" href="notes/new">＋ New note</a>
+</div>
+
+<ApiErrorAlert @bind-Message="ErrorMessage" />
+
+@if (result is null)
+{
+    <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (result.Total == 0)
+{
+    <p class="text-body-secondary">No notes yet. <a href="notes/new">Capture or upload your first page</a>.</p>
+}
+else
+{
+    <NoteCardList Notes="result.Items" />
+    <Pager Page="result.Page" PageSize="result.PageSize" Total="result.Total" PageChanged="LoadAsync" />
+}
+
+@code {
+    private const int PageSize = 12;
+    private PagedResult<NoteSummaryDto>? result;
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize));
+}
