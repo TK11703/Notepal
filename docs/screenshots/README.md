@@ -15,7 +15,14 @@ Captured from the web app at 1440×900 (mobile at 390×844) with sample data.
 | ![Original, light](light-note-original.png) | ![Original, dark](dark-note-original.png) |
 | ![Notes, light](light-note-notes.png) | ![Notes, dark](dark-note-notes.png) |
 
-## My notes, Search, New note, Welcome
+## Tags – edit on a note (with previously used suggestions) and filter My notes by tag
+
+| Light | Dark |
+| --- | --- |
+| ![Edit tags, light](light-note-edit-tags.png) | ![Edit tags, dark](dark-note-edit-tags.png) |
+| ![Tag filter, light](light-my-notes-tag-filter.png) | ![Tag filter, dark](dark-my-notes-tag-filter.png) |
+
+## My notes, Search (text + tag), New note (with tags), Welcome
 
 | Light | Dark |
 | --- | --- |
