@@ -4,9 +4,15 @@
 
 <PageTitle>My notes · Notepal</PageTitle>
 
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <h1 class="h3 mb-0">My notes</h1>
-    <a class="btn btn-primary" href="notes/new">＋ New note</a>
+<div class="page-header">
+    <div>
+        <h1 class="h3">My notes</h1>
+        @if (result is not null && result.Total > 0)
+        {
+            <p class="page-subtitle">@result.Total @(result.Total == 1 ? "note" : "notes")</p>
+        }
+    </div>
+    <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
 </div>
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
@@ -17,7 +23,11 @@
 }
 else if (result.Total == 0)
 {
-    <p class="text-body-secondary">No notes yet. <a href="notes/new">Capture or upload your first page</a>.</p>
+    <div class="empty-state">
+        <span class="feature-icon"><Icon Name="journal-text" /></span>
+        <p class="mb-3">No notes yet.</p>
+        <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> Capture or upload your first page</a>
+    </div>
 }
 else
 {

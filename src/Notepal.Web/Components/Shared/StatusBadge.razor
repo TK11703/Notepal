@@ -1,14 +1,24 @@
-<span class="badge @CssClass">@Text</span>
+<span class="status-pill @CssClass">
+    @if (Status == ProcessingStatus.Processing)
+    {
+        <span class="spinner-grow spinner-grow-sm" aria-hidden="true"></span>
+    }
+    else
+    {
+        <span class="status-dot" aria-hidden="true"></span>
+    }
+    @Text
+</span>
 
 @code {
     [Parameter, EditorRequired] public ProcessingStatus Status { get; set; }
 
     private string CssClass => Status switch
     {
-        ProcessingStatus.Completed => "text-bg-success",
-        ProcessingStatus.Failed => "text-bg-danger",
-        ProcessingStatus.Processing => "text-bg-info",
-        _ => "text-bg-secondary",
+        ProcessingStatus.Completed => "status-success",
+        ProcessingStatus.Failed => "status-danger",
+        ProcessingStatus.Processing => "status-info",
+        _ => "status-secondary",
     };
 
     private string Text => Status switch

@@ -1,15 +1,13 @@
 @if (TotalPages > 1)
 {
-    <nav aria-label="Pagination">
-        <ul class="pagination pagination-sm">
-            <li class="page-item @(Page <= 1 ? "disabled" : null)">
-                <button class="page-link" @onclick="() => PageChanged.InvokeAsync(Page - 1)" disabled="@(Page <= 1)">Previous</button>
-            </li>
-            <li class="page-item disabled"><span class="page-link">Page @Page of @TotalPages</span></li>
-            <li class="page-item @(Page >= TotalPages ? "disabled" : null)">
-                <button class="page-link" @onclick="() => PageChanged.InvokeAsync(Page + 1)" disabled="@(Page >= TotalPages)">Next</button>
-            </li>
-        </ul>
+    <nav class="d-flex align-items-center justify-content-between gap-2" aria-label="Pagination">
+        <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @onclick="() => PageChanged.InvokeAsync(Page - 1)" disabled="@(Page <= 1)">
+            <Icon Name="chevron-left" /> Previous
+        </button>
+        <span class="small text-body-secondary">Page @Page of @TotalPages</span>
+        <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @onclick="() => PageChanged.InvokeAsync(Page + 1)" disabled="@(Page >= TotalPages)">
+            Next <Icon Name="chevron-right" />
+        </button>
     </nav>
 }
 

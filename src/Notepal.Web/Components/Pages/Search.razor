@@ -4,10 +4,16 @@
 
 <PageTitle>Search · Notepal</PageTitle>
 
-<h1 class="h3 mb-3">Search notes</h1>
+<div class="page-header">
+    <div>
+        <h1 class="h3">Search notes</h1>
+        <p class="page-subtitle">Search the text of every page you have captured.</p>
+    </div>
+</div>
 
-<form class="mb-4" role="search" @onsubmit="SubmitAsync">
-    <div class="input-group">
+<form class="mb-4" role="search" @onsubmit="SubmitAsync" style="max-width: 48rem;">
+    <div class="input-group input-group-lg">
+        <span class="input-group-text bg-transparent"><Icon Name="search" /></span>
         <input class="form-control" type="search" placeholder="Search your notes, e.g. photosynthesis or &quot;project kickoff&quot;" aria-label="Search terms" @bind="query" />
         <button class="btn btn-primary" type="submit">Search</button>
     </div>
@@ -23,15 +29,15 @@
 else if (result is not null)
 {
     <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches") for “@Q”</p>
-    <div class="list-group mb-3">
+    <div class="list-group mb-4 shadow-sm">
         @foreach (var hit in result.Items)
         {
-            <a class="list-group-item list-group-item-action" href="notes/@hit.NoteId?page=@hit.PageNumber">
+            <a class="list-group-item list-group-item-action search-hit" href="notes/@hit.NoteId?page=@hit.PageNumber">
                 <div class="d-flex justify-content-between gap-2">
-                    <strong class="text-truncate">@hit.Title</strong>
+                    <span class="hit-title text-truncate">@hit.Title</span>
                     <small class="text-body-secondary text-nowrap">Page @hit.PageNumber · @hit.UpdatedAt.LocalDateTime.ToString("d")</small>
                 </div>
-                <div class="small mt-1"><HighlightedSnippet Text="@hit.Snippet" /></div>
+                <div class="small mt-2"><HighlightedSnippet Text="@hit.Snippet" /></div>
             </a>
         }
     </div>

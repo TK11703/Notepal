@@ -13,13 +13,13 @@ side by side, and search everything you have captured. Every user only ever sees
 - **AI OCR**: images (and scanned PDF pages) are sent to a Foundry agent (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
   background queue and resumes automatically after a restart.
-- **Review & correct**: each page has tabs for **Original**, **Notes** and **Side by side**. Corrections are stored
+- **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
   scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
-- **Light / dark / auto theme** toggle (Bootstrap 5.3 colour modes, remembered per browser).
+- **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
 ## Architecture
 

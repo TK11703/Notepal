@@ -32,6 +32,16 @@
         }
     };
 
+    // Small UI preferences (e.g. the preferred note view) remembered per browser.
+    window.notepalPrefs = {
+        get: function (key) {
+            try { return localStorage.getItem('notepal-' + key); } catch { return null; }
+        },
+        set: function (key, value) {
+            try { localStorage.setItem('notepal-' + key, value); } catch { /* storage unavailable */ }
+        }
+    };
+
     media.addEventListener('change', function () { if (stored() === 'auto') apply('auto'); });
     apply(stored());
 })();
