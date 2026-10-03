@@ -19,17 +19,22 @@
 
 @if (knownTags.Count > 0)
 {
-    <nav class="tag-filter mb-4" aria-label="Filter by tag">
-        <span class="tag-filter-label"><Icon Name="tags" /> Filter</span>
-        <a class="tag-chip @(ActiveTag is null ? "active" : null)" href="notes" aria-current="@(ActiveTag is null ? "page" : null)">All notes</a>
-        @foreach (var tag in knownTags)
+    <div class="tag-filter-select mb-4">
+        <label class="tag-filter-label" for="tag-filter"><Icon Name="tags" /> Filter by tag</label>
+        <select id="tag-filter" class="form-select form-select-sm" value="@(ActiveTag ?? string.Empty)" @onchange="OnTagSelected">
+            <option value="">All notes</option>
+            @foreach (var tag in knownTags)
+            {
+                <option value="@tag.Name">@tag.Name (@tag.Count)</option>
+            }
+        </select>
+        @if (ActiveTag is not null)
         {
-            var active = tag.Name == ActiveTag;
-            <a class="tag-chip @(active ? "active" : null)" href="@TagChips.NotesHref(tag.Name)" aria-current="@(active ? "page" : null)">
-                <Icon Name="tag" /> @tag.Name <span class="tag-count">@tag.Count</span>
+            <a class="btn btn-sm btn-link text-body-secondary d-inline-flex align-items-center gap-1 text-decoration-none" href="notes">
+                <Icon Name="x-lg" /> Clear
             </a>
         }
-    </nav>
+    </div>
 }
 
 @if (result is null)
@@ -73,6 +78,12 @@ else
     {
         result = null;
         await LoadAsync(1);
+    }
+
+    private void OnTagSelected(ChangeEventArgs e)
+    {
+        var tag = TagLimits.Normalize(e.Value?.ToString());
+        Navigation.NavigateTo(tag is null ? "notes" : TagChips.NotesHref(tag));
     }
 
     private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize, ActiveTag));

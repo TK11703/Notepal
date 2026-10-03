@@ -899,3 +899,16 @@ button.tag-chip {
     color: var(--bs-secondary-color);
     font-size: .8rem;
 }
+
+.tag-filter-select {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem;
+}
+
+    .tag-filter-select .form-select {
+        width: auto;
+        min-width: 12rem;
+        max-width: 100%;
+    }
