@@ -1,0 +1,109 @@
+@page "/about"
+
+<PageTitle>About · Notepal</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="h3">About Notepal</h1>
+        <p class="page-subtitle">Turn handwritten and printed notes into private, searchable, editable text.</p>
+    </div>
+</div>
+
+<section class="hero text-start mb-4">
+    <div class="col-lg-9">
+        <h2 class="h4 fw-bold mb-3">Your notes, <span class="gradient-text">searchable</span>.</h2>
+        <p class="lead text-body-secondary mb-0">
+            Notepal keeps track of your notes, whether they are hand-written or digital. Capture a page with your camera or upload a
+            photo, PDF or Word document. Notepal keeps the original exactly as you uploaded it and uses AI to transcribe the
+            text, so you can review it, correct it and find it again later.
+        </p>
+    </div>
+</section>
+
+<h2 class="h5 mb-3">Features</h2>
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-5">
+    @foreach (var f in Features)
+    {
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <span class="feature-icon mb-3"><Icon Name="@f.Icon" /></span>
+                    <h3 class="h6 fw-semibold">@f.Title</h3>
+                    <p class="small text-body-secondary mb-0">@f.Text</p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<h2 class="h5 mb-3">How it works</h2>
+<ol class="steps mb-5">
+    <li>
+        <h3 class="h6 fw-semibold mb-1">Capture</h3>
+        <p class="small text-body-secondary mb-0">
+            Create a note and add up to @UploadLimits.MaxFilesPerNote pages: photos from your camera, or JPEG, PNG, WebP, GIF, PDF
+            and Word (.docx) files of up to @(UploadLimits.MaxFileBytes / 1024 / 1024) MB each.
+        </p>
+    </li>
+    <li>
+        <h3 class="h6 fw-semibold mb-1">Transcribe</h3>
+        <p class="small text-body-secondary mb-0">
+            Images and scanned PDF pages are read by an AI model. Text in digital PDFs and Word documents is extracted directly.
+            This runs in the background, usually within a few seconds per page.
+        </p>
+    </li>
+    <li>
+        <h3 class="h6 fw-semibold mb-1">Review &amp; correct</h3>
+        <p class="small text-body-secondary mb-0">
+            Compare the original with the transcription side by side, or switch between them with tabs. Your corrections are saved
+            separately, so you can always revert to the AI text.
+        </p>
+    </li>
+    <li>
+        <h3 class="h6 fw-semibold mb-1">Find it again</h3>
+        <p class="small text-body-secondary mb-0">Search the text and titles of every page you have captured, with matches highlighted.</p>
+    </li>
+</ol>
+
+<div class="card mb-4">
+    <div class="card-body d-flex flex-column flex-md-row align-items-md-center gap-3">
+        <span class="feature-icon flex-shrink-0"><Icon Name="shield-lock" /></span>
+        <div class="flex-grow-1">
+            <h2 class="h6 fw-semibold mb-1">Private by design</h2>
+            <p class="small text-body-secondary mb-0">
+                You sign in with your Microsoft Entra ID account, and every request is limited to your own notes. Nobody else
+                using Notepal can see, search or open them.
+            </p>
+        </div>
+        <a class="btn btn-outline-secondary flex-shrink-0 d-inline-flex align-items-center gap-1" href="faq"><Icon Name="question-circle" /> Read the FAQ</a>
+    </div>
+</div>
+
+<AuthorizeView>
+    <Authorized>
+        <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> Create a note</a>
+    </Authorized>
+    <NotAuthorized>
+        <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="authentication/login?returnUrl=%2Fnotes"><Icon Name="box-arrow-in-right" /> Sign in to get started</a>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private sealed record Feature(string Icon, string Title, string Text);
+
+    private static readonly Feature[] Features =
+    [
+        new("camera-fill", "Capture anything",
+            "Take photos in the browser or with your phone's camera app, or upload images, PDFs and Word documents. Several files become the pages of one note."),
+        new("image", "Originals kept unchanged",
+            "Every uploaded file is stored exactly as it was, so you can always go back to the source or download it."),
+        new("stars", "AI transcription",
+            "Handwritten and printed text in images and scanned PDFs is transcribed by AI. You can re-run extraction for any page."),
+        new("layout-split", "Side by side or tabs",
+            "Check the transcription against the original side by side, or switch between Original and Notes. Notepal remembers your preferred view."),
+        new("search", "Full-text search",
+            "Find notes by any word, phrase or title. Supports quoted phrases, \"or\" and -exclusions."),
+        new("circle-half", "Light, dark or auto",
+            "Pick a light or dark theme, or follow your device setting. Works on desktop and mobile."),
+    ];
+}

@@ -19,6 +19,7 @@ side by side, and search everything you have captured. Every user only ever sees
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
   scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
+- **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
 - **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
 ## Architecture

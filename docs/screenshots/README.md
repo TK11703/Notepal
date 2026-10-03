@@ -24,6 +24,13 @@ Captured from the web app at 1440×900 (mobile at 390×844) with sample data.
 | ![New note, light](light-new-note.png) | ![New note, dark](dark-new-note.png) |
 | ![Welcome, light](light-welcome.png) | ![Welcome, dark](dark-welcome.png) |
 
+## About & FAQ
+
+| Light | Dark |
+| --- | --- |
+| ![About, light](light-about.png) | ![About, dark](dark-about.png) |
+| ![FAQ, light](light-faq.png) | ![FAQ, dark](dark-faq.png) |
+
 ## Mobile
 
 | Light | Dark |

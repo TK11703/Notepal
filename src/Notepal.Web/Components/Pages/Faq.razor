@@ -1,0 +1,83 @@
+@page "/faq"
+
+<PageTitle>FAQ · Notepal</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1 class="h3">Frequently asked questions</h1>
+        <p class="page-subtitle">Answers to common questions about capturing, transcribing and finding your notes.</p>
+    </div>
+</div>
+
+@foreach (var section in Sections)
+{
+    <section class="mb-4" aria-labelledby="faq-@section.Id">
+        <h2 class="h6 text-uppercase text-body-secondary fw-semibold mb-2" id="faq-@section.Id" style="letter-spacing: .06em;">@section.Title</h2>
+        <div class="faq-list">
+            @foreach (var item in section.Items)
+            {
+                <details class="faq-item">
+                    <summary>@item.Question <Icon Name="chevron-right" Class="faq-chevron" /></summary>
+                    <div class="faq-answer">@item.Answer</div>
+                </details>
+            }
+        </div>
+    </section>
+}
+
+<div class="card">
+    <div class="card-body d-flex flex-column flex-md-row align-items-md-center gap-3">
+        <span class="feature-icon flex-shrink-0"><Icon Name="info-circle" /></span>
+        <p class="small text-body-secondary mb-0 flex-grow-1">Want an overview of everything Notepal can do?</p>
+        <a class="btn btn-outline-secondary flex-shrink-0" href="about">About Notepal</a>
+    </div>
+</div>
+
+@code {
+    private sealed record Item(string Question, RenderFragment Answer);
+    private sealed record Section(string Id, string Title, Item[] Items);
+
+    private static readonly long MaxMb = UploadLimits.MaxFileBytes / 1024 / 1024;
+
+    private static readonly Section[] Sections =
+    [
+        new("getting-started", "Getting started",
+        [
+            new("What is Notepal?", @<p>Notepal stores photos and documents of your notes, transcribes their text with AI and makes everything searchable. You can correct the transcription and compare it with the original at any time.</p>),
+            new("Do I need an account?", @<p>Yes. You sign in with your Microsoft Entra ID (work or school) account. Notes are linked to that account.</p>),
+            new("Does it work on my phone?", @<p>Yes. The site adapts to small screens, and on the <strong>New note</strong> page you can take photos with your phone's camera app or with the camera directly in the browser.</p>),
+        ]),
+        new("capturing", "Capturing notes",
+        [
+            new("Which file types can I upload?", @<p>Images (JPEG, PNG, WebP, GIF), PDF files and Word documents (<code>.docx</code>). Older Word files (<code>.doc</code>) are not supported. Save them as <code>.docx</code> or PDF first.</p>),
+            new("Are there size limits?", @<p>Each file can be up to @MaxMb MB, and a note can have up to @UploadLimits.MaxFilesPerNote pages. Every file or photo you add becomes one page, in the order you added them.</p>),
+            new("The camera does not start. What can I do?", @<p>Your browser asks for permission the first time you start the camera. Allow camera access for this site in your browser settings. The page must be served over HTTPS. As an alternative, use <strong>Or use your device's camera app</strong>, or upload a photo.</p>),
+            new("Is my original file changed?", @<p>No. The file is stored exactly as you uploaded it. Open it full size or download it from the <strong>Original</strong> view of a note.</p>),
+        ]),
+        new("transcription", "Transcription & editing",
+        [
+            new("How does the transcription work?", @<p>Images and scanned PDF pages are sent to an AI model hosted in Azure AI Foundry, which transcribes handwritten and printed text. Text in digital PDFs and Word documents is extracted directly, without AI.</p>),
+            new("How long does it take?", @<p>Usually a few seconds per page. Transcription runs in the background, so you can leave the page. The note shows <em>Queued</em> or <em>Reading…</em> until it is done and updates automatically.</p>),
+            new("The transcription has mistakes. Can I fix them?", @<p>Yes. Edit the text in the <strong>Notes</strong> view and choose <strong>Save corrections</strong>. Use <strong>Side by side</strong> to check the text against the original while you type.</p>),
+            new("Can I undo my corrections?", @<p>Yes. Your corrections are stored separately from the AI text. Choose <strong>Revert to AI text</strong> to go back, or <strong>Discard changes</strong> to drop edits you have not saved yet.</p>),
+            new("A page shows \"Failed\". What now?", @<p>The page could not be read automatically. The message on the page explains why. Try <strong>Re-run extraction</strong>, or type the notes yourself in the editor.</p>),
+            new("Does re-running extraction overwrite my corrections?", @<p>No. Re-running extraction updates the AI text. Your saved corrections are kept.</p>),
+            new("How do I switch between the original and the notes?", @<p>Use the <strong>Original</strong>, <strong>Notes</strong> and <strong>Side by side</strong> switcher on a note. Notepal remembers your choice in this browser. For notes with several pages, use the numbered page buttons or the arrows.</p>),
+        ]),
+        new("search", "Search",
+        [
+            new("What does search look at?", @<p>The text of every page (your corrected version if you edited it) and the note titles.</p>),
+            new("Are there search tips?", @<p>Put a phrase in quotes, for example <code>"project kickoff"</code>. Use <code>or</code> for alternatives, for example <code>cats or dogs</code>, and a minus sign to exclude a word, for example <code>-draft</code>. Search also finds words that start with or contain your search term.</p>),
+        ]),
+        new("privacy", "Privacy & data",
+        [
+            new("Who can see my notes?", @<p>Only you. Every request is checked against the account you signed in with, and notes cannot be shared with other users.</p>),
+            new("Where is my data stored?", @<p>Your originals and their text are stored in the Notepal database. Images and scanned pages are sent to the Azure AI service only to be transcribed.</p>),
+            new("How do I delete a note?", @<p>Open the note, choose <strong>Delete</strong> and confirm. This permanently removes the note, all of its pages and the original files.</p>),
+        ]),
+        new("appearance", "Appearance",
+        [
+            new("How do I switch between light and dark mode?", @<p>Use the sun, moon and half-circle buttons in the top bar for <strong>Light</strong>, <strong>Dark</strong> or <strong>Auto</strong>. Auto follows your device setting. Your choice is remembered in this browser.</p>),
+        ]),
+    ];
+}
