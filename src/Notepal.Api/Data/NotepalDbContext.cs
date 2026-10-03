@@ -24,6 +24,8 @@ public sealed class NotepalDbContext(DbContextOptions<NotepalDbContext> options,
             note.Property(n => n.TitleSearchVector)
                 .HasComputedColumnSql("to_tsvector('english', coalesce(\"Title\", ''))", stored: true);
             note.HasIndex(n => n.TitleSearchVector).HasMethod("GIN");
+            note.Property(n => n.Tags).HasColumnType("text[]").HasDefaultValueSql("'{}'::text[]");
+            note.HasIndex(n => n.Tags).HasMethod("GIN");
             note.HasMany(n => n.Pages).WithOne(p => p.Note).HasForeignKey(p => p.NoteId).OnDelete(DeleteBehavior.Cascade);
             note.HasQueryFilter(n => n.OwnerId == _ownerId);
         });

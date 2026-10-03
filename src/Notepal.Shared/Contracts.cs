@@ -16,7 +16,8 @@ public sealed record NoteSummaryDto(
     DateTimeOffset UpdatedAt,
     int PageCount,
     ProcessingStatus Status,
-    string? Preview);
+    string? Preview,
+    IReadOnlyList<string> Tags);
 
 public sealed record PageDto(
     Guid Id,
@@ -37,11 +38,17 @@ public sealed record NoteDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     ProcessingStatus Status,
-    IReadOnlyList<PageDto> Pages);
+    IReadOnlyList<PageDto> Pages,
+    IReadOnlyList<string> Tags);
 
 public sealed record UpdateNoteRequest(string Title);
 
 public sealed record UpdatePageTextRequest(string Text);
+
+public sealed record UpdateNoteTagsRequest(IReadOnlyList<string> Tags);
+
+/// <summary>A tag the user has used, with the number of their notes that carry it.</summary>
+public sealed record TagDto(string Name, int Count);
 
 public sealed record SearchResultDto(
     Guid NoteId,
@@ -49,7 +56,8 @@ public sealed record SearchResultDto(
     Guid? PageId,
     int? PageNumber,
     string Snippet,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<string> Tags);
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
@@ -71,4 +79,36 @@ public static class UploadLimits
     };
 
     public const string AcceptAttribute = "image/*,.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+}
+
+/// <summary>Rules shared by the API and the web app so tags look the same everywhere.</summary>
+public static class TagLimits
+{
+    public const int MaxTagsPerNote = 20;
+    public const int MaxTagLength = 40;
+
+    /// <summary>
+    /// Normalises a tag: trims it, removes a leading '#', treats commas as spaces, collapses whitespace to single spaces and lower-cases it.
+    /// Returns <c>null</c> when nothing usable is left.
+    /// </summary>
+    public static string? Normalize(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            return null;
+        }
+
+        var value = string.Join(' ', tag.Replace(',', ' ').Trim().TrimStart('#').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .ToLowerInvariant();
+        if (value.Length > MaxTagLength)
+        {
+            value = value[..MaxTagLength].TrimEnd();
+        }
+
+        return value.Length == 0 ? null : value;
+    }
+
+    /// <summary>Normalises, de-duplicates and sorts a set of tags.</summary>
+    public static List<string> NormalizeAll(IEnumerable<string?>? tags) =>
+        (tags ?? []).Select(Normalize).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
 }

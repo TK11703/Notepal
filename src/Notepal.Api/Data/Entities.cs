@@ -16,6 +16,9 @@ public sealed class Note
 
     public NpgsqlTsVector TitleSearchVector { get; set; } = null!;
 
+    /// <summary>Normalised (see <see cref="TagLimits.Normalize"/>), distinct and sorted tags.</summary>
+    public List<string> Tags { get; set; } = [];
+
     public List<Page> Pages { get; set; } = [];
 }
 

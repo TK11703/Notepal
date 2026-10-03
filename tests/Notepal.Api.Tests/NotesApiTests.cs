@@ -164,9 +164,76 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/notes/{note.Id}")).StatusCode);
     }
 
-    private static async Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files)
+    [Fact]
+    public async Task Tags_are_normalised_on_create_and_update()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var note = await UploadAsync(client, "Tagged", ["#Biology", " exam  prep ", "biology"], ("t.png", TestFiles.Png));
+        Assert.Equal(["biology", "exam prep"], note.Tags);
+
+        var response = await client.PutAsJsonAsync($"/api/notes/{note.Id}/tags", new UpdateNoteTagsRequest(["Week 3", "BIOLOGY", "", "week 3"]));
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(["biology", "week 3"], (await response.Content.ReadFromJsonAsync<NoteDto>())!.Tags);
+        Assert.Equal(["biology", "week 3"], (await client.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.Tags);
+
+        var tooMany = Enumerable.Range(0, TagLimits.MaxTagsPerNote + 1).Select(i => $"t{i}").ToArray();
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync($"/api/notes/{note.Id}/tags", new UpdateNoteTagsRequest(tooMany))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Notes_and_search_can_be_filtered_by_tag()
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var bio = await WaitForProcessingAsync(client, (await UploadAsync(client, "Bio lecture", ["biology", "exam"], ("b.png", TestFiles.Png))).Id);
+        await WaitForProcessingAsync(client, (await UploadAsync(client, "History lecture", ["history"], ("h.png", TestFiles.Png))).Id);
+
+        var list = await client.GetFromJsonAsync<PagedResult<NoteSummaryDto>>("/api/notes?tag=Biology");
+        Assert.Equal(bio.Id, Assert.Single(list!.Items).Id);
+        Assert.Equal(["biology", "exam"], list.Items[0].Tags);
+
+        var both = await client.GetFromJsonAsync<PagedResult<NoteSummaryDto>>("/api/notes?tag=biology&tag=history");
+        Assert.Empty(both!.Items);
+
+        var tagOnly = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?tag=history");
+        Assert.Equal("History lecture", Assert.Single(tagOnly!.Items).Title);
+
+        var lecture = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=lecture");
+        Assert.Equal(2, lecture!.Total);
+
+        var lectureAndTag = await client.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?q=lecture&tag=biology");
+        var hit = Assert.Single(lectureAndTag!.Items);
+        Assert.Equal(bio.Id, hit.NoteId);
+        Assert.Contains("exam", hit.Tags);
+
+        var tags = await client.GetFromJsonAsync<List<TagDto>>("/api/tags");
+        Assert.Equal([new TagDto("biology", 1), new TagDto("exam", 1), new TagDto("history", 1)], tags);
+    }
+
+    [Fact]
+    public async Task Tags_are_private_to_their_owner()
+    {
+        var alice = factory.CreateClientFor(NewUser());
+        var bob = factory.CreateClientFor(NewUser());
+        var note = await UploadAsync(alice, "Alice", ["secret-project"], ("a.png", TestFiles.Png));
+
+        Assert.Empty((await bob.GetFromJsonAsync<List<TagDto>>("/api/tags"))!);
+        Assert.Empty((await bob.GetFromJsonAsync<PagedResult<SearchResultDto>>("/api/search?tag=secret-project"))!.Items);
+        Assert.Empty((await bob.GetFromJsonAsync<PagedResult<NoteSummaryDto>>("/api/notes?tag=secret-project"))!.Items);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/api/notes/{note.Id}/tags", new UpdateNoteTagsRequest(["mine"]))).StatusCode);
+        Assert.Equal(["secret-project"], (await alice.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.Tags);
+    }
+
+    private static Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files) =>
+        UploadAsync(client, title, [], files);
+
+    private static async Task<NoteDto> UploadAsync(HttpClient client, string title, string[] tags, params (string Name, byte[] Data)[] files)
     {
         using var content = new MultipartFormDataContent { { new StringContent(title), "title" } };
+        foreach (var tag in tags)
+        {
+            content.Add(new StringContent(tag), "tags");
+        }
+
         foreach (var (name, data) in files)
         {
             content.Add(new ByteArrayContent(data), "files", name);

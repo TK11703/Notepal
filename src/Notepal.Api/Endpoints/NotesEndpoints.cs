@@ -1,4 +1,5 @@
 using System.Net.Mime;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using Notepal.Api.Auth;
@@ -16,11 +17,13 @@ public static class NotesEndpoints
     public static RouteGroupBuilder MapNotesEndpoints(this RouteGroupBuilder api)
     {
         var notes = api.MapGroup("/notes").WithTags("Notes");
+        api.MapGet("/tags", ListTags).WithTags("Tags");
 
         notes.MapGet("/", ListNotes);
         notes.MapGet("/{noteId:guid}", GetNote);
         notes.MapPost("/", CreateNote).DisableAntiforgery();
         notes.MapPut("/{noteId:guid}", UpdateNote);
+        notes.MapPut("/{noteId:guid}/tags", UpdateNoteTags);
         notes.MapDelete("/{noteId:guid}", DeleteNote);
         notes.MapGet("/{noteId:guid}/pages/{pageId:guid}/original", GetOriginal);
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/text", UpdatePageText);
@@ -29,12 +32,12 @@ public static class NotesEndpoints
         return api;
     }
 
-    private static async Task<IResult> ListNotes(NotepalDbContext db, ICurrentUser user, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    private static async Task<IResult> ListNotes(NotepalDbContext db, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         var ownerId = user.UserId!;
         (page, pageSize) = Paging.Normalize(page, pageSize);
 
-        var query = db.Notes.Where(n => n.OwnerId == ownerId);
+        var query = db.Notes.Where(n => n.OwnerId == ownerId).WithAllTags(tags);
         var total = await query.CountAsync(ct);
         var rows = await query
             .OrderByDescending(n => n.UpdatedAt)
@@ -46,6 +49,7 @@ public static class NotesEndpoints
                 n.Title,
                 n.CreatedAt,
                 n.UpdatedAt,
+                n.Tags,
                 Statuses = n.Pages.Select(p => p.Status).ToList(),
                 Preview = n.Pages.OrderBy(p => p.PageNumber)
                     .Select(p => (p.EditedText ?? p.ExtractedText)!.Substring(0, 240))
@@ -54,7 +58,7 @@ public static class NotesEndpoints
             .ToListAsync(ct);
 
         var items = rows.Select(r => new NoteSummaryDto(
-                r.Id, r.Title, r.CreatedAt, r.UpdatedAt, r.Statuses.Count, Mapping.AggregateStatus(r.Statuses), r.Preview))
+                r.Id, r.Title, r.CreatedAt, r.UpdatedAt, r.Statuses.Count, Mapping.AggregateStatus(r.Statuses), r.Preview, r.Tags))
             .ToList();
 
         return Results.Ok(new PagedResult<NoteSummaryDto>(items, total, page, pageSize));
@@ -96,6 +100,12 @@ public static class NotesEndpoints
             title = files.Count == 1 ? Path.GetFileNameWithoutExtension(files[0].FileName) : $"Note {now:yyyy-MM-dd HH:mm}";
         }
 
+        var tags = TagLimits.NormalizeAll(form["tags"]);
+        if (tags.Count > TagLimits.MaxTagsPerNote)
+        {
+            return TooManyTags();
+        }
+
         var note = new Note
         {
             Id = Guid.NewGuid(),
@@ -103,6 +113,7 @@ public static class NotesEndpoints
             Title = Truncate(title, MaxTitleLength),
             CreatedAt = now,
             UpdatedAt = now,
+            Tags = tags,
         };
 
         var errors = new List<string>();
@@ -179,6 +190,50 @@ public static class NotesEndpoints
         await db.SaveChangesAsync(ct);
         return Results.Ok(note.ToDto());
     }
+
+    private static async Task<IResult> UpdateNoteTags(Guid noteId, UpdateNoteTagsRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
+    {
+        var ownerId = user.UserId!;
+        var tags = TagLimits.NormalizeAll(body.Tags);
+        if (tags.Count > TagLimits.MaxTagsPerNote)
+        {
+            return TooManyTags();
+        }
+
+        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        if (note is null)
+        {
+            return Results.NotFound();
+        }
+
+        note.Tags = tags;
+        note.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(note.ToDto());
+    }
+
+    /// <summary>All tags the caller has used, most used first, so the UI can suggest them.</summary>
+    private static async Task<IResult> ListTags(NotepalDbContext db, ICurrentUser user, CancellationToken ct)
+    {
+        var ownerId = user.UserId!;
+        var tagArrays = await db.Notes
+            .Where(n => n.OwnerId == ownerId && n.Tags.Count > 0)
+            .Select(n => n.Tags)
+            .ToListAsync(ct);
+
+        var tags = tagArrays
+            .SelectMany(t => t)
+            .GroupBy(t => t, StringComparer.Ordinal)
+            .Select(g => new TagDto(g.Key, g.Count()))
+            .OrderByDescending(t => t.Count)
+            .ThenBy(t => t.Name, StringComparer.Ordinal)
+            .ToList();
+
+        return Results.Ok(tags);
+    }
+
+    private static IResult TooManyTags() =>
+        Results.ValidationProblem(new Dictionary<string, string[]> { ["tags"] = [$"A note can have at most {TagLimits.MaxTagsPerNote} tags."] });
 
     private static async Task<IResult> DeleteNote(Guid noteId, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
     {
@@ -258,6 +313,16 @@ public static class NotesEndpoints
     }
 
     private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
+}
+
+internal static class TagFilter
+{
+    /// <summary>Keeps notes that carry every one of the given tags (after normalisation). No tags means no filter.</summary>
+    public static IQueryable<Note> WithAllTags(this IQueryable<Note> notes, IEnumerable<string?>? tags)
+    {
+        var wanted = TagLimits.NormalizeAll(tags);
+        return wanted.Count == 0 ? notes : notes.Where(n => wanted.All(t => n.Tags.Contains(t)));
+    }
 }
 
 internal static class Paging
