@@ -7,9 +7,9 @@
 <div class="page-header">
     <div>
         <h1 class="h3">My notes</h1>
-        @if (result is not null && result.Total > 0)
+        @if (result is not null && (result.Total > 0 || ActiveTag is not null))
         {
-            <p class="page-subtitle">@result.Total @(result.Total == 1 ? "note" : "notes")</p>
+            <p class="page-subtitle">@result.Total @(result.Total == 1 ? "note" : "notes")@(ActiveTag is null ? null : $" tagged “{ActiveTag}”")</p>
         }
     </div>
     <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
@@ -17,9 +17,32 @@
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
 
+@if (knownTags.Count > 0)
+{
+    <nav class="tag-filter mb-4" aria-label="Filter by tag">
+        <span class="tag-filter-label"><Icon Name="tags" /> Filter</span>
+        <a class="tag-chip @(ActiveTag is null ? "active" : null)" href="notes" aria-current="@(ActiveTag is null ? "page" : null)">All notes</a>
+        @foreach (var tag in knownTags)
+        {
+            var active = tag.Name == ActiveTag;
+            <a class="tag-chip @(active ? "active" : null)" href="@TagChips.NotesHref(tag.Name)" aria-current="@(active ? "page" : null)">
+                <Icon Name="tag" /> @tag.Name <span class="tag-count">@tag.Count</span>
+            </a>
+        }
+    </nav>
+}
+
 @if (result is null)
 {
     <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (result.Total == 0 && ActiveTag is not null)
+{
+    <div class="empty-state">
+        <span class="feature-icon"><Icon Name="tag" /></span>
+        <p class="mb-3">No notes are tagged “@ActiveTag”.</p>
+        <a class="btn btn-outline-secondary" href="notes">Show all notes</a>
+    </div>
 }
 else if (result.Total == 0)
 {
@@ -38,8 +61,19 @@ else
 @code {
     private const int PageSize = 12;
     private PagedResult<NoteSummaryDto>? result;
+    private IReadOnlyList<TagDto> knownTags = [];
 
-    protected override Task OnInitializedAsync() => LoadAsync(1);
+    [SupplyParameterFromQuery(Name = "tag")] public string? Tag { get; set; }
 
-    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize));
+    private string? ActiveTag => TagLimits.Normalize(Tag);
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
+
+    protected override async Task OnParametersSetAsync()
+    {
+        result = null;
+        await LoadAsync(1);
+    }
+
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize, ActiveTag));
 }

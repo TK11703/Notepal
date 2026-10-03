@@ -18,6 +18,11 @@
     <input id="title" class="form-control" maxlength="200" placeholder="Optional – defaults to the file name" @bind="title" />
 </div>
 
+<div class="mb-4" style="max-width: 40rem;">
+    <label class="form-label" for="new-note-tags">Tags <span class="text-body-secondary fw-normal">(optional)</span></label>
+    <TagEditor @bind-Tags="tags" Suggestions="knownTags" InputId="new-note-tags" />
+</div>
+
 <div class="segmented mb-3" role="tablist" aria-label="Source">
     <button type="button" role="tab" class="segmented-item @(source == Source.Upload ? "active" : null)" aria-selected="@(source == Source.Upload ? "true" : "false")" @onclick="() => source = Source.Upload">
         <Icon Name="cloud-arrow-up" /> Upload files
@@ -101,7 +106,11 @@
     private CameraCapture? camera;
     private Source source = Source.Upload;
     private string? title;
+    private IReadOnlyList<string> tags = [];
+    private IReadOnlyList<TagDto> knownTags = [];
     private int photoCounter;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
 
     private async Task OnFilesSelectedAsync(InputFileChangeEventArgs e)
     {
@@ -186,7 +195,7 @@
     {
         NoteDto? created = null;
         var ok = await RunAsync(async () =>
-            created = await Api.CreateNoteAsync(title, items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList()));
+            created = await Api.CreateNoteAsync(title, tags, items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList()));
 
         if (ok && created is not null)
         {

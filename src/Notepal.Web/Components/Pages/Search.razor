@@ -7,7 +7,7 @@
 <div class="page-header">
     <div>
         <h1 class="h3">Search notes</h1>
-        <p class="page-subtitle">Search the text of every page you have captured.</p>
+        <p class="page-subtitle">Search the text of every page you have captured, or narrow it down by tag.</p>
     </div>
 </div>
 
@@ -18,6 +18,20 @@
         <button class="btn btn-primary" type="submit">Search</button>
     </div>
     <div class="form-text">Use quotes for phrases, <code>or</code> for alternatives and <code>-word</code> to exclude a word.</div>
+    @if (knownTags.Count > 0)
+    {
+        <div class="tag-filter mt-3" role="group" aria-label="Filter by tag">
+            <span class="tag-filter-label"><Icon Name="tags" /> Tag</span>
+            <button type="button" class="tag-chip @(ActiveTag is null ? "active" : null)" aria-pressed="@(ActiveTag is null ? "true" : "false")" @onclick="() => ApplyTag(null)">Any</button>
+            @foreach (var tag in knownTags)
+            {
+                var active = tag.Name == ActiveTag;
+                <button type="button" class="tag-chip @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")" @onclick="() => ApplyTag(active ? null : tag.Name)">
+                    <Icon Name="tag" /> @tag.Name <span class="tag-count">@tag.Count</span>
+                </button>
+            }
+        </div>
+    }
 </form>
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
@@ -28,16 +42,20 @@
 }
 else if (result is not null)
 {
-    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches") for “@Q”</p>
+    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches")@(string.IsNullOrWhiteSpace(Q) ? null : $" for “{Q}”")@(ActiveTag is null ? null : $" tagged “{ActiveTag}”")</p>
     <div class="list-group mb-4 shadow-sm">
         @foreach (var hit in result.Items)
         {
-            <a class="list-group-item list-group-item-action search-hit" href="notes/@hit.NoteId?page=@hit.PageNumber">
+            <a class="list-group-item list-group-item-action search-hit" href="@(hit.PageNumber is null ? $"notes/{hit.NoteId}" : $"notes/{hit.NoteId}?page={hit.PageNumber}")">
                 <div class="d-flex justify-content-between gap-2">
                     <span class="hit-title text-truncate">@hit.Title</span>
-                    <small class="text-body-secondary text-nowrap">Page @hit.PageNumber · @hit.UpdatedAt.LocalDateTime.ToString("d")</small>
+                    <small class="text-body-secondary text-nowrap">@(hit.PageNumber is null ? null : $"Page {hit.PageNumber} · ")@hit.UpdatedAt.LocalDateTime.ToString("d")</small>
                 </div>
-                <div class="small mt-2"><HighlightedSnippet Text="@hit.Snippet" /></div>
+                @if (!string.IsNullOrWhiteSpace(hit.Snippet))
+                {
+                    <div class="small mt-2"><HighlightedSnippet Text="@hit.Snippet" /></div>
+                }
+                <TagChips Tags="hit.Tags" Class="mt-2" />
             </a>
         }
     </div>
@@ -48,27 +66,45 @@ else if (result is not null)
     private const int PageSize = 20;
 
     [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "tag")] public string? Tag { get; set; }
 
     private string? query;
     private PagedResult<SearchResultDto>? result;
+    private IReadOnlyList<TagDto> knownTags = [];
+
+    private string? ActiveTag => TagLimits.Normalize(Tag);
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
 
     protected override async Task OnParametersSetAsync()
     {
         query = Q;
         result = null;
-        if (!string.IsNullOrWhiteSpace(Q))
+        if (!string.IsNullOrWhiteSpace(Q) || ActiveTag is not null)
         {
             await LoadAsync(1);
         }
     }
 
-    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q!, page, PageSize));
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q ?? string.Empty, page, PageSize, ActiveTag));
 
-    private void SubmitAsync()
+    private void SubmitAsync() => NavigateTo(query, ActiveTag);
+
+    private void ApplyTag(string? tag) => NavigateTo(query, tag);
+
+    private void NavigateTo(string? terms, string? tag)
     {
-        if (!string.IsNullOrWhiteSpace(query))
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(terms))
         {
-            Navigation.NavigateTo($"search?q={Uri.EscapeDataString(query.Trim())}");
+            parts.Add($"q={Uri.EscapeDataString(terms.Trim())}");
         }
+
+        if (tag is not null)
+        {
+            parts.Add($"tag={Uri.EscapeDataString(tag)}");
+        }
+
+        Navigation.NavigateTo(parts.Count == 0 ? "search" : $"search?{string.Join('&', parts)}");
     }
 }

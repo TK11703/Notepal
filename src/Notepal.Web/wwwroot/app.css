@@ -755,3 +755,147 @@ textarea.notes-editor {
     .faq-answer code {
         color: var(--bs-emphasis-color);
     }
+
+/* ---------- Tags ---------- */
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    max-width: 100%;
+    padding: .15rem .6rem;
+    border: 1px solid var(--bs-primary-border-subtle);
+    border-radius: 999px;
+    background: var(--bs-primary-bg-subtle);
+    color: var(--bs-primary-text-emphasis);
+    font-size: .78rem;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+    .tag-chip .np-icon {
+        flex-shrink: 0;
+        opacity: .75;
+    }
+
+a.tag-chip:hover,
+button.tag-chip:hover {
+    border-color: var(--bs-primary);
+    color: var(--bs-primary-text-emphasis);
+}
+
+.tag-chip.active {
+    background: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: #fff;
+}
+
+    .tag-chip.active .tag-count {
+        background: rgba(255, 255, 255, .22);
+        color: #fff;
+    }
+
+.tag-count {
+    padding: 0 .4rem;
+    border-radius: 999px;
+    background: var(--np-surface);
+    color: var(--bs-secondary-color);
+    font-size: .7rem;
+}
+
+button.tag-chip {
+    cursor: pointer;
+}
+
+.tag-chip:focus-visible,
+.tag-chip-remove:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 .2rem var(--np-focus-ring);
+}
+
+.tag-chip-suggest {
+    border-style: dashed;
+    background: transparent;
+    color: var(--bs-secondary-color);
+}
+
+.tag-chip-remove {
+    display: inline-flex;
+    margin: 0 -.3rem 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+    .tag-chip-remove:hover {
+        background: var(--np-hover-bg);
+    }
+
+.tag-editor-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem;
+    min-height: calc(1.5em + .75rem + 2px);
+    padding: .3rem .5rem;
+    border: var(--bs-border-width) solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background: var(--bs-body-bg);
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+    .tag-editor-field:focus-within {
+        border-color: var(--bs-primary-border-subtle);
+        box-shadow: 0 0 0 .25rem var(--np-focus-ring);
+    }
+
+.tag-editor-input {
+    flex: 1 1 8rem;
+    min-width: 6rem;
+    padding: .1rem .25rem;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--bs-body-color);
+}
+
+    .tag-editor-input::placeholder {
+        color: var(--bs-secondary-color);
+    }
+
+.tag-suggestions,
+.tag-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem;
+}
+
+.tag-suggestions {
+    margin-top: .5rem;
+}
+
+.tag-suggestions-label,
+.tag-filter-label {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    margin-right: .25rem;
+    color: var(--bs-secondary-color);
+    font-size: .8rem;
+}

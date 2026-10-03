@@ -44,6 +44,26 @@ else
                 <Icon Name="clock" /> Created @note.CreatedAt.LocalDateTime.ToString("g") · Updated @note.UpdatedAt.LocalDateTime.ToString("g")
                 · @note.Pages.Count @(note.Pages.Count == 1 ? "page" : "pages")
             </div>
+            @if (editingTags)
+            {
+                <div class="card card-body mt-3 note-tags-editor" style="max-width: 40rem;">
+                    <label class="form-label fw-semibold" for="note-tags">Tags</label>
+                    <TagEditor @bind-Tags="tagsDraft" Suggestions="knownTags" InputId="note-tags" />
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" type="button" disabled="@Busy" @onclick="SaveTagsAsync">Save tags</button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => editingTags = false">Cancel</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <TagChips Tags="note.Tags" HrefFor="TagChips.NotesHref" />
+                    <button class="btn btn-sm btn-link text-body-secondary p-0 d-inline-flex align-items-center gap-1 text-decoration-none" type="button" @onclick="StartTagEditAsync">
+                        <Icon Name="@(note.Tags.Count == 0 ? "tag" : "pencil")" /> @(note.Tags.Count == 0 ? "Add tags" : "Edit tags")
+                    </button>
+                </div>
+            }
         </div>
         <div class="d-flex gap-2">
             @if (confirmDelete)
@@ -135,6 +155,9 @@ else
     private ViewTab tab = ViewTab.SideBySide;
     private bool notFound;
     private bool editingTitle;
+    private bool editingTags;
+    private IReadOnlyList<string> tagsDraft = [];
+    private IReadOnlyList<TagDto> knownTags = [];
     private bool confirmDelete;
     private bool polling;
     private string? titleDraft;
@@ -320,6 +343,22 @@ else
         if (await RunAsync(async () => note = await Api.RenameNoteAsync(NoteId, titleDraft)))
         {
             editingTitle = false;
+            SelectPage(current?.PageNumber ?? 1);
+        }
+    }
+
+    private async Task StartTagEditAsync()
+    {
+        tagsDraft = note?.Tags ?? [];
+        editingTags = true;
+        await RunAsync(async () => knownTags = await Api.GetTagsAsync(disposed.Token));
+    }
+
+    private async Task SaveTagsAsync()
+    {
+        if (await RunAsync(async () => note = await Api.UpdateNoteTagsAsync(NoteId, tagsDraft, disposed.Token)))
+        {
+            editingTags = false;
             SelectPage(current?.PageNumber ?? 1);
         }
     }

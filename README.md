@@ -15,6 +15,9 @@ side by side, and search everything you have captured. Every user only ever sees
   background queue and resumes automatically after a restart.
 - **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
+- **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are
+  normalised (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
+  search results, and used to filter **My notes** and **Search** (with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
@@ -49,15 +52,17 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 
 | Method & route | Description |
 | --- | --- |
-| `GET /api/notes?page=&pageSize=` | The caller's notes, newest first |
-| `POST /api/notes` | `multipart/form-data` with `title` and one or more `files` (max 20 files, 20 MB each) |
+| `GET /api/notes?page=&pageSize=&tag=` | The caller's notes, newest first; repeat `tag` to require several tags |
+| `POST /api/notes` | `multipart/form-data` with `title`, optional `tags` (repeatable, max 20) and one or more `files` (max 20 files, 20 MB each) |
 | `GET /api/notes/{id}` | Note with its pages and text |
 | `PUT /api/notes/{id}` | Rename |
+| `PUT /api/notes/{id}/tags` | Replace the note's tags: `{ "tags": ["biology", "exam prep"] }` |
+| `GET /api/tags` | Tags the caller has used, with note counts (most used first) |
 | `DELETE /api/notes/{id}` | Delete note, pages and originals |
 | `GET /api/notes/{id}/pages/{pageId}/original` | Original file |
 | `PUT /api/notes/{id}/pages/{pageId}/text` | Save corrected text (sending the AI text back clears the correction) |
 | `POST /api/notes/{id}/pages/{pageId}/reprocess` | Re-run text extraction |
-| `GET /api/search?q=&page=&pageSize=` | Full-text search; matches in `snippet` are wrapped in `⟦ ⟧` |
+| `GET /api/search?q=&tag=&page=&pageSize=` | Full-text search, optionally limited to notes with the given tag(s); matches in `snippet` are wrapped in `⟦ ⟧`. With only `tag`, returns one result per tagged note |
 
 ## Run locally
 

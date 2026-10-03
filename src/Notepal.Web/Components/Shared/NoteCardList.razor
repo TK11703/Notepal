@@ -9,6 +9,7 @@
                         <StatusBadge Status="note.Status" />
                     </div>
                     <p class="card-text small note-preview mb-3 flex-grow-1">@(string.IsNullOrWhiteSpace(note.Preview) ? "No text yet." : note.Preview)</p>
+                    <TagChips Tags="note.Tags" Class="mb-3" />
                     <div class="small text-body-secondary d-flex align-items-center gap-3">
                         <span class="d-inline-flex align-items-center gap-1"><Icon Name="clock" /> @note.UpdatedAt.LocalDateTime.ToString("g")</span>
                         <span class="d-inline-flex align-items-center gap-1"><Icon Name="file-earmark-text" /> @note.PageCount @(note.PageCount == 1 ? "page" : "pages")</span>
