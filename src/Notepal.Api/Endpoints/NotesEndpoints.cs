@@ -24,6 +24,7 @@ public static class NotesEndpoints
         notes.MapPost("/", CreateNote).DisableAntiforgery();
         notes.MapPut("/{noteId:guid}", UpdateNote);
         notes.MapPut("/{noteId:guid}/tags", UpdateNoteTags);
+        notes.MapPost("/{noteId:guid}/pages", AddPages).DisableAntiforgery();
         notes.MapDelete("/{noteId:guid}", DeleteNote);
         notes.MapGet("/{noteId:guid}/pages/{pageId:guid}/original", GetOriginal);
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/text", UpdatePageText);
@@ -116,43 +117,8 @@ public static class NotesEndpoints
             Tags = tags,
         };
 
-        var errors = new List<string>();
-        var number = 1;
-        foreach (var file in files)
-        {
-            var fileName = Truncate(Path.GetFileName(file.FileName), 260);
-            if (file.Length == 0 || file.Length > UploadLimits.MaxFileBytes)
-            {
-                errors.Add($"'{fileName}' must be between 1 byte and {UploadLimits.MaxFileBytes / (1024 * 1024)} MB.");
-                continue;
-            }
-
-            byte[] data;
-            using (var buffer = new MemoryStream((int)file.Length))
-            {
-                await file.CopyToAsync(buffer, ct);
-                data = buffer.ToArray();
-            }
-
-            if (!FileTypes.TryResolve(fileName, data, out var contentType))
-            {
-                errors.Add($"'{fileName}' is not a supported file. Upload JPEG, PNG, WebP or GIF images, PDF or Word (.docx) documents.");
-                continue;
-            }
-
-            note.Pages.Add(new Page
-            {
-                Id = Guid.NewGuid(),
-                OwnerId = ownerId,
-                PageNumber = number++,
-                FileName = fileName,
-                ContentType = contentType,
-                SizeBytes = data.LongLength,
-                Status = ProcessingStatus.Pending,
-                UpdatedAt = now,
-                Content = new PageContent { Data = data },
-            });
-        }
+        var (pages, errors) = await ReadPagesAsync(files, ownerId, 1, now, ct);
+        note.Pages.AddRange(pages);
 
         if (errors.Count > 0)
         {
@@ -189,6 +155,110 @@ public static class NotesEndpoints
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         return Results.Ok(note.ToDto());
+    }
+
+    /// <summary>Appends uploaded files as new pages at the end of an existing note.</summary>
+    private static async Task<IResult> AddPages(Guid noteId, HttpRequest request, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
+    {
+        var ownerId = user.UserId!;
+        if (!request.HasFormContentType)
+        {
+            return Results.Problem("Expected a multipart/form-data request.", statusCode: StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        if (note is null)
+        {
+            return Results.NotFound();
+        }
+
+        var form = await request.ReadFormAsync(ct);
+        var files = form.Files;
+        if (files.Count == 0)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = ["Upload at least one file."] });
+        }
+
+        var remaining = UploadLimits.MaxFilesPerNote - note.Pages.Count;
+        if (files.Count > remaining)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["files"] = [remaining <= 0
+                    ? $"This note already has the maximum of {UploadLimits.MaxFilesPerNote} pages."
+                    : $"A note can contain at most {UploadLimits.MaxFilesPerNote} pages. You can add {remaining} more."],
+            });
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var next = note.Pages.Count == 0 ? 1 : note.Pages.Max(p => p.PageNumber) + 1;
+        var (pages, errors) = await ReadPagesAsync(files, ownerId, next, now, ct);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = [.. errors] });
+        }
+
+        foreach (var page in pages)
+        {
+            // Adding through the DbSet marks the page as new; relationship fix-up also adds it to note.Pages.
+            page.NoteId = note.Id;
+            db.Pages.Add(page);
+        }
+
+        note.UpdatedAt = now;
+        await db.SaveChangesAsync(ct);
+
+        foreach (var page in pages)
+        {
+            queue.Enqueue(page.Id);
+        }
+
+        return Results.Ok(note.ToDto());
+    }
+
+    /// <summary>Validates uploaded files (size, extension and signature) and turns them into pending pages numbered from <paramref name="firstNumber"/>.</summary>
+    private static async Task<(List<Page> Pages, List<string> Errors)> ReadPagesAsync(IFormFileCollection files, string ownerId, int firstNumber, DateTimeOffset now, CancellationToken ct)
+    {
+        var pages = new List<Page>();
+        var errors = new List<string>();
+        var number = firstNumber;
+        foreach (var file in files)
+        {
+            var fileName = Truncate(Path.GetFileName(file.FileName), 260);
+            if (file.Length == 0 || file.Length > UploadLimits.MaxFileBytes)
+            {
+                errors.Add($"'{fileName}' must be between 1 byte and {UploadLimits.MaxFileBytes / (1024 * 1024)} MB.");
+                continue;
+            }
+
+            byte[] data;
+            using (var buffer = new MemoryStream((int)file.Length))
+            {
+                await file.CopyToAsync(buffer, ct);
+                data = buffer.ToArray();
+            }
+
+            if (!FileTypes.TryResolve(fileName, data, out var contentType))
+            {
+                errors.Add($"'{fileName}' is not a supported file. Upload JPEG, PNG, WebP or GIF images, PDF or Word (.docx) documents.");
+                continue;
+            }
+
+            pages.Add(new Page
+            {
+                Id = Guid.NewGuid(),
+                OwnerId = ownerId,
+                PageNumber = number++,
+                FileName = fileName,
+                ContentType = contentType,
+                SizeBytes = data.LongLength,
+                Status = ProcessingStatus.Pending,
+                UpdatedAt = now,
+                Content = new PageContent { Data = data },
+            });
+        }
+
+        return (pages, errors);
     }
 
     private static async Task<IResult> UpdateNoteTags(Guid noteId, UpdateNoteTagsRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)

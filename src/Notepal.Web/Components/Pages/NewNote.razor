@@ -1,18 +1,53 @@
 @page "/notes/new"
+@page "/notes/{NoteId:guid}/add-pages"
 @attribute [Authorize]
 @inherits NotepalComponentBase
 
-<PageTitle>New note · Notepal</PageTitle>
+<PageTitle>@(Adding ? "Add pages" : "New note") · Notepal</PageTitle>
 
+@if (Adding)
+{
+    <a class="back-link" href="notes/@NoteId"><Icon Name="chevron-left" /> @(existing?.Title ?? "Back to note")</a>
+}
 <div class="page-header">
     <div>
-        <h1 class="h3">New note</h1>
-        <p class="page-subtitle">Each file or photo becomes a page. AI transcribes the text after you save.</p>
+        @if (Adding)
+        {
+            <h1 class="h3">Add pages</h1>
+            <p class="page-subtitle">
+                New pages are added after the
+                @(existing is null ? "existing" : $"{existing.Pages.Count} existing {(existing.Pages.Count == 1 ? "page" : "pages")}") of
+                @(existing is null ? "this note" : $"“{existing.Title}”"). AI transcribes them after you save.
+            </p>
+        }
+        else
+        {
+            <h1 class="h3">New note</h1>
+            <p class="page-subtitle">Each file or photo becomes a page. AI transcribes the text after you save. You can add more pages later.</p>
+        }
     </div>
 </div>
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
 
+@if (Adding && notFound)
+{
+    <p>The note does not exist or it belongs to another account. <a href="notes">Back to my notes</a>.</p>
+}
+else if (Adding && existing is null)
+{
+    <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
+}
+else if (Adding && MaxPages <= 0)
+{
+    <div class="alert alert-info d-flex align-items-center gap-2" role="status">
+        <Icon Name="info-circle" /> This note already has the maximum of @UploadLimits.MaxFilesPerNote pages. Create a new note for more pages.
+    </div>
+}
+else
+{
+@if (!Adding)
+{
 <div class="mb-3" style="max-width: 40rem;">
     <label class="form-label" for="title">Title</label>
     <input id="title" class="form-control" maxlength="200" placeholder="Optional – defaults to the file name" @bind="title" />
@@ -22,6 +57,7 @@
     <label class="form-label" for="new-note-tags">Tags <span class="text-body-secondary fw-normal">(optional)</span></label>
     <TagEditor @bind-Tags="tags" Suggestions="knownTags" InputId="new-note-tags" />
 </div>
+}
 
 <div class="segmented mb-3" role="tablist" aria-label="Source">
     <button type="button" role="tab" class="segmented-item @(source == Source.Upload ? "active" : null)" aria-selected="@(source == Source.Upload ? "true" : "false")" @onclick="() => source = Source.Upload">
@@ -53,10 +89,12 @@
 
     <div class="col-lg-5">
         <div class="card card-body">
-        <h2 class="h6 d-flex justify-content-between">Pages <span class="text-body-secondary fw-normal">@items.Count / @UploadLimits.MaxFilesPerNote</span></h2>
+        <h2 class="h6 d-flex justify-content-between">@(Adding ? "New pages" : "Pages") <span class="text-body-secondary fw-normal">@items.Count / @MaxPages</span></h2>
         @if (items.Count == 0)
         {
-            <p class="text-body-secondary small">Nothing added yet. Each file or photo becomes a page of the note, in this order.</p>
+            <p class="text-body-secondary small">
+                Nothing added yet. Each file or photo becomes a page of the note, in this order@(Adding ? $", starting at page {NextPageNumber}" : null).
+            </p>
         }
         else
         {
@@ -90,12 +128,17 @@
             }
             else
             {
-                <span class="d-inline-flex align-items-center gap-1"><Icon Name="check2" /> Save note</span>
+                <span class="d-inline-flex align-items-center gap-1"><Icon Name="check2" /> @(Adding ? $"Add {items.Count} {(items.Count == 1 ? "page" : "pages")}" : "Save note")</span>
             }
         </button>
+        @if (Adding)
+        {
+            <a class="btn btn-link w-100 mt-1 text-body-secondary" href="notes/@NoteId">Cancel</a>
+        }
         </div>
     </div>
 </div>
+}
 
 @code {
     private enum Source { Upload, Camera }
@@ -109,8 +152,26 @@
     private IReadOnlyList<string> tags = [];
     private IReadOnlyList<TagDto> knownTags = [];
     private int photoCounter;
+    private NoteDto? existing;
+    private bool notFound;
 
-    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
+    /// <summary>Set when adding pages to an existing note instead of creating a new one.</summary>
+    [Parameter] public Guid? NoteId { get; set; }
+
+    private bool Adding => NoteId is not null;
+
+    /// <summary>How many pages can still be added: the per-note limit minus the pages the note already has.</summary>
+    private int MaxPages => UploadLimits.MaxFilesPerNote - (existing?.Pages.Count ?? 0);
+
+    private int NextPageNumber => (existing?.Pages.Count > 0 ? existing.Pages.Max(p => p.PageNumber) : 0) + 1;
+
+    protected override Task OnInitializedAsync() => NoteId is { } id
+        ? RunAsync(async () =>
+        {
+            existing = await Api.GetNoteAsync(id);
+            notFound = existing is null;
+        })
+        : RunAsync(async () => knownTags = await Api.GetTagsAsync());
 
     private async Task OnFilesSelectedAsync(InputFileChangeEventArgs e)
     {
@@ -119,9 +180,9 @@
 
         foreach (var file in e.GetMultipleFiles(UploadLimits.MaxFilesPerNote))
         {
-            if (items.Count >= UploadLimits.MaxFilesPerNote)
+            if (items.Count >= MaxPages)
             {
-                problems.Add($"A note can contain at most {UploadLimits.MaxFilesPerNote} pages.");
+                problems.Add(LimitMessage);
                 break;
             }
 
@@ -171,9 +232,9 @@
 
     private async Task OnCapturedAsync(CameraCapture.CapturedPhoto photo)
     {
-        if (items.Count >= UploadLimits.MaxFilesPerNote)
+        if (items.Count >= MaxPages)
         {
-            ErrorMessage = $"A note can contain at most {UploadLimits.MaxFilesPerNote} pages.";
+            ErrorMessage = LimitMessage;
             await camera!.ReleaseAsync(photo.ObjectUrl);
             return;
         }
@@ -191,15 +252,22 @@
         }
     }
 
+    private string LimitMessage => Adding
+        ? $"A note can contain at most {UploadLimits.MaxFilesPerNote} pages, so you can add {MaxPages} more to this note."
+        : $"A note can contain at most {UploadLimits.MaxFilesPerNote} pages.";
+
     private async Task SaveAsync()
     {
-        NoteDto? created = null;
-        var ok = await RunAsync(async () =>
-            created = await Api.CreateNoteAsync(title, tags, items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList()));
+        NoteDto? saved = null;
+        var uploads = items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList();
+        var firstNewPage = NextPageNumber;
+        var ok = await RunAsync(async () => saved = NoteId is { } id
+            ? await Api.AddPagesAsync(id, uploads)
+            : await Api.CreateNoteAsync(title, tags, uploads));
 
-        if (ok && created is not null)
+        if (ok && saved is not null)
         {
-            Navigation.NavigateTo($"notes/{created.Id}");
+            Navigation.NavigateTo(Adding ? $"notes/{saved.Id}?page={firstNewPage}" : $"notes/{saved.Id}");
         }
     }
 

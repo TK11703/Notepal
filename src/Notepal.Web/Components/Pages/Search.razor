@@ -7,7 +7,7 @@
 <div class="page-header">
     <div>
         <h1 class="h3">Search notes</h1>
-        <p class="page-subtitle">Search the text of every page you have captured, or narrow it down by tag.</p>
+        <p class="page-subtitle">Search the text of every page you have captured, or narrow it down by one or more tags.</p>
     </div>
 </div>
 
@@ -20,15 +20,11 @@
     <div class="form-text">Use quotes for phrases, <code>or</code> for alternatives and <code>-word</code> to exclude a word.</div>
     @if (knownTags.Count > 0)
     {
-        <div class="tag-filter mt-3" role="group" aria-label="Filter by tag">
-            <span class="tag-filter-label"><Icon Name="tags" /> Tag</span>
-            <button type="button" class="tag-chip @(ActiveTag is null ? "active" : null)" aria-pressed="@(ActiveTag is null ? "true" : "false")" @onclick="() => ApplyTag(null)">Any</button>
-            @foreach (var tag in knownTags)
+        <div class="mt-3">
+            <TagMultiSelect Options="knownTags" Selected="ActiveTags" SelectedChanged="ApplyTags" Id="search-tags" />
+            @if (ActiveTags.Count > 1)
             {
-                var active = tag.Name == ActiveTag;
-                <button type="button" class="tag-chip @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")" @onclick="() => ApplyTag(active ? null : tag.Name)">
-                    <Icon Name="tag" /> @tag.Name <span class="tag-count">@tag.Count</span>
-                </button>
+                <div class="form-text">Showing notes that have all of the selected tags.</div>
             }
         </div>
     }
@@ -42,7 +38,7 @@
 }
 else if (result is not null)
 {
-    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches")@(string.IsNullOrWhiteSpace(Q) ? null : $" for “{Q}”")@(ActiveTag is null ? null : $" tagged “{ActiveTag}”")</p>
+    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches")@(string.IsNullOrWhiteSpace(Q) ? null : $" for “{Q}”")@(ActiveTags.Count == 0 ? null : $" tagged {string.Join(" + ", ActiveTags.Select(t => $"“{t}”"))}")</p>
     <div class="list-group mb-4 shadow-sm">
         @foreach (var hit in result.Items)
         {
@@ -66,13 +62,13 @@ else if (result is not null)
     private const int PageSize = 20;
 
     [SupplyParameterFromQuery] public string? Q { get; set; }
-    [SupplyParameterFromQuery(Name = "tag")] public string? Tag { get; set; }
+    [SupplyParameterFromQuery(Name = "tag")] public string[]? Tag { get; set; }
 
     private string? query;
     private PagedResult<SearchResultDto>? result;
     private IReadOnlyList<TagDto> knownTags = [];
 
-    private string? ActiveTag => TagLimits.Normalize(Tag);
+    private List<string> ActiveTags => TagLimits.NormalizeAll(Tag);
 
     protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
 
@@ -80,19 +76,19 @@ else if (result is not null)
     {
         query = Q;
         result = null;
-        if (!string.IsNullOrWhiteSpace(Q) || ActiveTag is not null)
+        if (!string.IsNullOrWhiteSpace(Q) || ActiveTags.Count > 0)
         {
             await LoadAsync(1);
         }
     }
 
-    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q ?? string.Empty, page, PageSize, ActiveTag));
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q ?? string.Empty, page, PageSize, ActiveTags));
 
-    private void SubmitAsync() => NavigateTo(query, ActiveTag);
+    private void SubmitAsync() => NavigateTo(query, ActiveTags);
 
-    private void ApplyTag(string? tag) => NavigateTo(query, tag);
+    private void ApplyTags(IReadOnlyList<string> tags) => NavigateTo(query, tags);
 
-    private void NavigateTo(string? terms, string? tag)
+    private void NavigateTo(string? terms, IReadOnlyList<string> tags)
     {
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(terms))
@@ -100,10 +96,7 @@ else if (result is not null)
             parts.Add($"q={Uri.EscapeDataString(terms.Trim())}");
         }
 
-        if (tag is not null)
-        {
-            parts.Add($"tag={Uri.EscapeDataString(tag)}");
-        }
+        parts.AddRange(TagLimits.NormalizeAll(tags).Select(t => $"tag={Uri.EscapeDataString(t)}"));
 
         Navigation.NavigateTo(parts.Count == 0 ? "search" : $"search?{string.Join('&', parts)}");
     }

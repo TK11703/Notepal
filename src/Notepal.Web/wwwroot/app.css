@@ -912,3 +912,58 @@ button.tag-chip {
         min-width: 12rem;
         max-width: 100%;
     }
+
+/* Multi-select tag drop-down (Search) */
+.tag-multiselect {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem;
+}
+
+.tag-multiselect-anchor {
+    position: relative;
+}
+
+.tag-multiselect-caret {
+    font-size: .75em;
+    opacity: .7;
+}
+
+.tag-multiselect-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+}
+
+.tag-multiselect-panel {
+    position: absolute;
+    top: calc(100% + .35rem);
+    left: 0;
+    z-index: 1045;
+    width: min(18rem, calc(100vw - 2rem));
+    padding: .6rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background: var(--np-surface);
+    box-shadow: var(--np-shadow-md);
+}
+
+.tag-multiselect-options {
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.tag-multiselect-option {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .35rem .4rem;
+    border-radius: var(--bs-border-radius-sm);
+    font-size: .875rem;
+    cursor: pointer;
+}
+
+    .tag-multiselect-option:hover {
+        background: var(--np-hover-bg);
+    }
