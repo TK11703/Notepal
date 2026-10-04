@@ -1,0 +1,17 @@
+@* The caller's access to a shared note: Reader (view only) or Contributor (can edit). *@
+@if (Role == NoteRole.Contributor)
+{
+    <span class="status-pill status-success" title="You can view and edit this note, but not delete or share it"><Icon Name="pencil" /> Contributor</span>
+}
+else if (Role == NoteRole.Reader)
+{
+    <span class="status-pill status-secondary" title="You can view this note and download its originals"><Icon Name="eye" /> Reader</span>
+}
+else
+{
+    <span class="status-pill status-primary"><Icon Name="journal-text" /> Owner</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public NoteRole Role { get; set; }
+}

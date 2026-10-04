@@ -12,6 +12,7 @@ API_NAME="${API_NAME:-notepal-api}"
 WEB_NAME="${WEB_NAME:-notepal-web}"
 LOCAL_WEB_URL="${LOCAL_WEB_URL:-https://localhost:7137}"
 SCOPE_NAME="access_as_user"
+GRAPH_APP_ID="00000003-0000-0000-c000-000000000000"
 
 tenant_id() { az account show --query tenantId -o tsv; }
 app_id() { az ad app list --display-name "$1" --query "[0].appId" -o tsv; }
@@ -48,10 +49,17 @@ register() {
     az ad sp create --id "$web_id" >/dev/null
   fi
 
-  # The web app requests the API scope (plus Microsoft Graph User.Read for sign-in).
+  # The web app requests the API scope plus Microsoft Graph User.Read (sign-in) and User.ReadBasic.All
+  # (searching people in the directory when sharing a note).
   az rest --method PATCH --uri "https://graph.microsoft.com/v1.0/applications/$(object_id "$web_id")" \
     --headers "Content-Type=application/json" \
-    --body "{\"requiredResourceAccess\":[{\"resourceAppId\":\"$api_id\",\"resourceAccess\":[{\"id\":\"$scope_id\",\"type\":\"Scope\"}]},{\"resourceAppId\":\"00000003-0000-0000-c000-000000000000\",\"resourceAccess\":[{\"id\":\"e1fe6dd8-ba31-4d61-89e7-88639da4683d\",\"type\":\"Scope\"}]}]}"
+    --body "{\"requiredResourceAccess\":[{\"resourceAppId\":\"$api_id\",\"resourceAccess\":[{\"id\":\"$scope_id\",\"type\":\"Scope\"}]},{\"resourceAppId\":\"$GRAPH_APP_ID\",\"resourceAccess\":[{\"id\":\"e1fe6dd8-ba31-4d61-89e7-88639da4683d\",\"type\":\"Scope\"},{\"id\":\"b340eb25-3456-403f-be2f-af7a0d370277\",\"type\":\"Scope\"}]}]}"
+
+  # Consent to the Graph scopes for the organisation, so people search works without an extra consent prompt.
+  # Needs an admin role (e.g. Cloud Application Administrator); otherwise sharing still works by typing e-mail addresses.
+  echo "Granting Microsoft Graph User.Read User.ReadBasic.All for the organisation..."
+  az ad app permission grant --id "$web_id" --api "$GRAPH_APP_ID" --scope "User.Read User.ReadBasic.All" >/dev/null \
+    || echo "  Could not grant consent - ask an administrator to grant consent for '$WEB_NAME' in the Entra admin center."
 
   # Pre-authorise the web app so users are not asked to consent to the API scope separately.
   az rest --method PATCH --uri "https://graph.microsoft.com/v1.0/applications/$api_object" \
