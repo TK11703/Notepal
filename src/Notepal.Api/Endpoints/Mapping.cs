@@ -24,7 +24,8 @@ internal static class Mapping
         note.CreatedAt,
         note.UpdatedAt,
         AggregateStatus(note.Pages.Select(p => p.Status)),
-        note.Pages.OrderBy(p => p.PageNumber).Select(p => p.ToDto()).ToList());
+        note.Pages.OrderBy(p => p.PageNumber).Select(p => p.ToDto()).ToList(),
+        note.Tags);
 
     public static ProcessingStatus AggregateStatus(IEnumerable<ProcessingStatus> statuses)
     {

@@ -17,13 +17,13 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
 {
     public const string ServiceName = "NotepalApi";
 
-    public Task<PagedResult<NoteSummaryDto>> ListNotesAsync(int page, int pageSize, CancellationToken ct = default) =>
-        SendAsync<PagedResult<NoteSummaryDto>>(HttpMethod.Get, $"api/notes?page={page}&pageSize={pageSize}", null, ct);
+    public Task<PagedResult<NoteSummaryDto>> ListNotesAsync(int page, int pageSize, string? tag = null, CancellationToken ct = default) =>
+        SendAsync<PagedResult<NoteSummaryDto>>(HttpMethod.Get, $"api/notes?page={page}&pageSize={pageSize}{TagQuery(tag)}", null, ct);
 
     public Task<NoteDto?> GetNoteAsync(Guid noteId, CancellationToken ct = default) =>
         SendOrDefaultAsync<NoteDto>(HttpMethod.Get, $"api/notes/{noteId}", null, ct);
 
-    public async Task<NoteDto> CreateNoteAsync(string? title, IReadOnlyList<UploadItem> files, CancellationToken ct = default)
+    public async Task<NoteDto> CreateNoteAsync(string? title, IReadOnlyList<string> tags, IReadOnlyList<UploadItem> files, CancellationToken ct = default)
     {
         using var content = new MultipartFormDataContent();
         if (!string.IsNullOrWhiteSpace(title))
@@ -31,18 +31,42 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
             content.Add(new StringContent(title.Trim()), "title");
         }
 
+        foreach (var tag in tags)
+        {
+            content.Add(new StringContent(tag), "tags");
+        }
+
+        AddFiles(content, files);
+        return await SendAsync<NoteDto>(HttpMethod.Post, "api/notes", content, ct);
+    }
+
+    /// <summary>Appends files as new pages at the end of an existing note.</summary>
+    public async Task<NoteDto> AddPagesAsync(Guid noteId, IReadOnlyList<UploadItem> files, CancellationToken ct = default)
+    {
+        using var content = new MultipartFormDataContent();
+        AddFiles(content, files);
+        return await SendAsync<NoteDto>(HttpMethod.Post, $"api/notes/{noteId}/pages", content, ct);
+    }
+
+    private static void AddFiles(MultipartFormDataContent content, IReadOnlyList<UploadItem> files)
+    {
         foreach (var file in files)
         {
             var part = new ByteArrayContent(file.Data);
             part.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
             content.Add(part, "files", file.FileName);
         }
-
-        return await SendAsync<NoteDto>(HttpMethod.Post, "api/notes", content, ct);
     }
 
     public Task<NoteDto> RenameNoteAsync(Guid noteId, string title, CancellationToken ct = default) =>
         SendAsync<NoteDto>(HttpMethod.Put, $"api/notes/{noteId}", JsonContent.Create(new UpdateNoteRequest(title)), ct);
+
+    public Task<NoteDto> UpdateNoteTagsAsync(Guid noteId, IReadOnlyList<string> tags, CancellationToken ct = default) =>
+        SendAsync<NoteDto>(HttpMethod.Put, $"api/notes/{noteId}/tags", JsonContent.Create(new UpdateNoteTagsRequest(tags)), ct);
+
+    /// <summary>Tags the user has used before, most used first.</summary>
+    public Task<List<TagDto>> GetTagsAsync(CancellationToken ct = default) =>
+        SendAsync<List<TagDto>>(HttpMethod.Get, "api/tags", null, ct);
 
     public async Task DeleteNoteAsync(Guid noteId, CancellationToken ct = default) =>
         await SendRawAsync(HttpMethod.Delete, $"api/notes/{noteId}", null, ct);
@@ -53,8 +77,12 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     public Task<PageDto> ReprocessPageAsync(Guid noteId, Guid pageId, CancellationToken ct = default) =>
         SendAsync<PageDto>(HttpMethod.Post, $"api/notes/{noteId}/pages/{pageId}/reprocess", null, ct);
 
-    public Task<PagedResult<SearchResultDto>> SearchAsync(string query, int page, int pageSize, CancellationToken ct = default) =>
-        SendAsync<PagedResult<SearchResultDto>>(HttpMethod.Get, $"api/search?q={Uri.EscapeDataString(query)}&page={page}&pageSize={pageSize}", null, ct);
+    /// <summary>Full-text search; when tags are given, only notes that carry every one of them are searched.</summary>
+    public Task<PagedResult<SearchResultDto>> SearchAsync(string query, int page, int pageSize, IReadOnlyList<string>? tags = null, CancellationToken ct = default) =>
+        SendAsync<PagedResult<SearchResultDto>>(HttpMethod.Get, $"api/search?q={Uri.EscapeDataString(query)}&page={page}&pageSize={pageSize}{TagQuery(tags ?? [])}", null, ct);
+
+    private static string TagQuery(params IReadOnlyList<string?> tags) =>
+        string.Concat(tags.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => $"&tag={Uri.EscapeDataString(t!)}"));
 
     /// <summary>Fetches an original artifact for the file proxy endpoint (plain HTTP request, so the user is passed explicitly).</summary>
     public async Task<HttpResponseMessage> GetOriginalAsync(ClaimsPrincipal user, Guid noteId, Guid pageId, CancellationToken ct = default) =>

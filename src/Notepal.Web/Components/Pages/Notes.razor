@@ -4,20 +4,58 @@
 
 <PageTitle>My notes · Notepal</PageTitle>
 
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-    <h1 class="h3 mb-0">My notes</h1>
-    <a class="btn btn-primary" href="notes/new">＋ New note</a>
+<div class="page-header">
+    <div>
+        <h1 class="h3">My notes</h1>
+        @if (result is not null && (result.Total > 0 || ActiveTag is not null))
+        {
+            <p class="page-subtitle">@result.Total @(result.Total == 1 ? "note" : "notes")@(ActiveTag is null ? null : $" tagged “{ActiveTag}”")</p>
+        }
+    </div>
+    <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
 </div>
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
+
+@if (knownTags.Count > 0)
+{
+    <div class="tag-filter-select mb-4">
+        <label class="tag-filter-label" for="tag-filter"><Icon Name="tags" /> Filter by tag</label>
+        <select id="tag-filter" class="form-select form-select-sm" value="@(ActiveTag ?? string.Empty)" @onchange="OnTagSelected">
+            <option value="">All notes</option>
+            @foreach (var tag in knownTags)
+            {
+                <option value="@tag.Name">@tag.Name (@tag.Count)</option>
+            }
+        </select>
+        @if (ActiveTag is not null)
+        {
+            <a class="btn btn-sm btn-link text-body-secondary d-inline-flex align-items-center gap-1 text-decoration-none" href="notes">
+                <Icon Name="x-lg" /> Clear
+            </a>
+        }
+    </div>
+}
 
 @if (result is null)
 {
     <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
 }
+else if (result.Total == 0 && ActiveTag is not null)
+{
+    <div class="empty-state">
+        <span class="feature-icon"><Icon Name="tag" /></span>
+        <p class="mb-3">No notes are tagged “@ActiveTag”.</p>
+        <a class="btn btn-outline-secondary" href="notes">Show all notes</a>
+    </div>
+}
 else if (result.Total == 0)
 {
-    <p class="text-body-secondary">No notes yet. <a href="notes/new">Capture or upload your first page</a>.</p>
+    <div class="empty-state">
+        <span class="feature-icon"><Icon Name="journal-text" /></span>
+        <p class="mb-3">No notes yet.</p>
+        <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> Capture or upload your first page</a>
+    </div>
 }
 else
 {
@@ -28,8 +66,25 @@ else
 @code {
     private const int PageSize = 12;
     private PagedResult<NoteSummaryDto>? result;
+    private IReadOnlyList<TagDto> knownTags = [];
 
-    protected override Task OnInitializedAsync() => LoadAsync(1);
+    [SupplyParameterFromQuery(Name = "tag")] public string? Tag { get; set; }
 
-    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize));
+    private string? ActiveTag => TagLimits.Normalize(Tag);
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
+
+    protected override async Task OnParametersSetAsync()
+    {
+        result = null;
+        await LoadAsync(1);
+    }
+
+    private void OnTagSelected(ChangeEventArgs e)
+    {
+        var tag = TagLimits.Normalize(e.Value?.ToString());
+        Navigation.NavigateTo(tag is null ? "notes" : TagChips.NotesHref(tag));
+    }
+
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.ListNotesAsync(page, PageSize, ActiveTag));
 }

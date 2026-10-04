@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inherits NotepalComponentBase
 @implements IDisposable
+@inject IJSRuntime JS
 
 <PageTitle>@(note?.Title ?? "Note") · Notepal</PageTitle>
 
@@ -18,22 +19,59 @@ else if (note is null)
 }
 else
 {
-    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-        @if (editingTitle)
-        {
-            <form class="d-flex gap-2 flex-grow-1" style="max-width: 36rem;" @onsubmit="SaveTitleAsync">
-                <input class="form-control" maxlength="200" aria-label="Note title" @bind="titleDraft" />
-                <button class="btn btn-primary" type="submit">Save</button>
-                <button class="btn btn-outline-secondary" type="button" @onclick="() => editingTitle = false">Cancel</button>
-            </form>
-        }
-        else
-        {
-            <h1 class="h3 mb-0 me-1 text-break">@note.Title</h1>
-            <button class="btn btn-sm btn-link" type="button" @onclick="StartTitleEdit">Rename</button>
-        }
-        <StatusBadge Status="note.Status" />
-        <div class="ms-auto d-flex gap-2">
+    <a class="back-link" href="notes"><Icon Name="chevron-left" /> My notes</a>
+    <div class="page-header mb-3">
+        <div class="min-w-0 flex-grow-1">
+            @if (editingTitle)
+            {
+                <form class="d-flex gap-2" style="max-width: 36rem;" @onsubmit="SaveTitleAsync">
+                    <input class="form-control" maxlength="200" aria-label="Note title" @bind="titleDraft" />
+                    <button class="btn btn-primary" type="submit">Save</button>
+                    <button class="btn btn-outline-secondary" type="button" @onclick="() => editingTitle = false">Cancel</button>
+                </form>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <h1 class="h3 mb-0 text-break">@note.Title</h1>
+                    <button class="btn btn-sm btn-link text-body-secondary p-1" type="button" title="Rename note" @onclick="StartTitleEdit">
+                        <Icon Name="pencil" /><span class="visually-hidden">Rename</span>
+                    </button>
+                    <StatusBadge Status="note.Status" />
+                </div>
+            }
+            <div class="small text-body-secondary mt-1 d-flex flex-wrap align-items-center gap-1">
+                <Icon Name="clock" /> Created @note.CreatedAt.LocalDateTime.ToString("g") · Updated @note.UpdatedAt.LocalDateTime.ToString("g")
+                · @note.Pages.Count @(note.Pages.Count == 1 ? "page" : "pages")
+            </div>
+            @if (editingTags)
+            {
+                <div class="card card-body mt-3 note-tags-editor" style="max-width: 40rem;">
+                    <label class="form-label fw-semibold" for="note-tags">Tags</label>
+                    <TagEditor @bind-Tags="tagsDraft" Suggestions="knownTags" InputId="note-tags" />
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" type="button" disabled="@Busy" @onclick="SaveTagsAsync">Save tags</button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => editingTags = false">Cancel</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                    <TagChips Tags="note.Tags" HrefFor="TagChips.NotesHref" />
+                    <button class="btn btn-sm btn-link text-body-secondary p-0 d-inline-flex align-items-center gap-1 text-decoration-none" type="button" @onclick="StartTagEditAsync">
+                        <Icon Name="@(note.Tags.Count == 0 ? "tag" : "pencil")" /> @(note.Tags.Count == 0 ? "Add tags" : "Edit tags")
+                    </button>
+                </div>
+            }
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            @if (note.Pages.Count < UploadLimits.MaxFilesPerNote)
+            {
+                <a class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" href="notes/@note.Id/add-pages" title="Add more pages to the end of this note">
+                    <Icon Name="file-earmark-plus" /> Add pages
+                </a>
+            }
             @if (confirmDelete)
             {
                 <button class="btn btn-sm btn-danger" type="button" @onclick="DeleteAsync">Confirm delete</button>
@@ -41,57 +79,72 @@ else
             }
             else
             {
-                <button class="btn btn-sm btn-outline-danger" type="button" @onclick="() => confirmDelete = true">Delete note</button>
+                <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" type="button" @onclick="() => confirmDelete = true">
+                    <Icon Name="trash3" /> Delete
+                </button>
             }
         </div>
     </div>
 
-    <div class="small text-body-secondary mb-3">
-        Created @note.CreatedAt.LocalDateTime.ToString("g") · Updated @note.UpdatedAt.LocalDateTime.ToString("g")
-    </div>
-
-    @if (note.Pages.Count > 1)
-    {
-        <nav class="mb-3" aria-label="Pages">
-            <ul class="pagination pagination-sm flex-wrap mb-0">
-                @foreach (var p in note.Pages)
-                {
-                    <li class="page-item @(p.Id == current?.Id ? "active" : null)">
-                        <button class="page-link" type="button" @onclick="() => SelectPage(p.PageNumber)" aria-current="@(p.Id == current?.Id ? "page" : null)">
-                            @p.PageNumber@(IsDirty(p) ? " •" : null)
-                        </button>
-                    </li>
-                }
-            </ul>
-        </nav>
-    }
-
     @if (current is not null)
     {
-        <ul class="nav nav-tabs mb-3" role="tablist">
-            @foreach (var t in Enum.GetValues<ViewTab>())
+        <div class="note-toolbar">
+            @if (note.Pages.Count > 1)
             {
-                <li class="nav-item" role="presentation">
-                    <button type="button" role="tab" class="nav-link @(tab == t ? "active" : null)" aria-selected="@(tab == t)" @onclick="() => tab = t">@TabLabel(t)</button>
-                </li>
+                <nav class="page-chips" aria-label="Pages">
+                    <button class="page-chip" type="button" disabled="@(current.PageNumber <= 1)" @onclick="() => SelectPage(current.PageNumber - 1)" title="Previous page">
+                        <Icon Name="chevron-left" /><span class="visually-hidden">Previous page</span>
+                    </button>
+                    @foreach (var p in note.Pages)
+                    {
+                        <button class="page-chip @(p.Id == current.Id ? "active" : null)" type="button" @onclick="() => SelectPage(p.PageNumber)"
+                                aria-current="@(p.Id == current.Id ? "page" : null)" title="@PageChipTitle(p)">
+                            @p.PageNumber
+                            @if (IsDirty(p))
+                            {
+                                <span class="dirty-dot" aria-hidden="true"></span>
+                            }
+                        </button>
+                    }
+                    <button class="page-chip" type="button" disabled="@(current.PageNumber >= note.Pages.Count)" @onclick="() => SelectPage(current.PageNumber + 1)" title="Next page">
+                        <Icon Name="chevron-right" /><span class="visually-hidden">Next page</span>
+                    </button>
+                </nav>
             }
-        </ul>
+            else
+            {
+                <span></span>
+            }
 
-        @if (tab == ViewTab.Original)
-        {
-            @RenderOriginal(current)
-        }
-        else if (tab == ViewTab.Notes)
-        {
-            @RenderEditor(current)
-        }
-        else
-        {
-            <div class="row g-3">
-                <div class="col-lg-6">@RenderOriginal(current)</div>
-                <div class="col-lg-6">@RenderEditor(current)</div>
+            <div class="segmented" role="tablist" aria-label="View">
+                @foreach (var t in Enum.GetValues<ViewTab>())
+                {
+                    <button type="button" role="tab" id="tab-@t" class="segmented-item @(tab == t ? "active" : null)" aria-selected="@(tab == t ? "true" : "false")"
+                            aria-controls="note-view" title="@TabLabel(t)" @onclick="() => SetTabAsync(t)">
+                        <Icon Name="@TabIcon(t)" /> <span class="d-none d-sm-inline">@TabLabel(t)</span>
+                        <span class="visually-hidden d-sm-none">@TabLabel(t)</span>
+                    </button>
+                }
             </div>
-        }
+        </div>
+
+        <div id="note-view" role="tabpanel" aria-labelledby="tab-@tab">
+            @if (tab == ViewTab.Original)
+            {
+                <div class="card">@RenderOriginal(current)</div>
+            }
+            else if (tab == ViewTab.Notes)
+            {
+                <div class="card">@RenderEditor(current)</div>
+            }
+            else
+            {
+                <div class="row g-3 split-view">
+                    <div class="col-lg-6"><div class="card pane-original">@RenderOriginal(current)</div></div>
+                    <div class="col-lg-6"><div class="card">@RenderEditor(current)</div></div>
+                </div>
+            }
+        </div>
     }
 }
 
@@ -108,17 +161,61 @@ else
     private ViewTab tab = ViewTab.SideBySide;
     private bool notFound;
     private bool editingTitle;
+    private bool editingTags;
+    private IReadOnlyList<string> tagsDraft = [];
+    private IReadOnlyList<TagDto> knownTags = [];
     private bool confirmDelete;
     private bool polling;
     private string? titleDraft;
     private int editorVersion;
 
+    private const string ViewPreferenceKey = "note-view";
+
     private static string TabLabel(ViewTab t) => t switch
     {
-        ViewTab.Original => "🖼️ Original",
-        ViewTab.Notes => "📝 Notes",
-        _ => "↔️ Side by side",
+        ViewTab.Original => "Original",
+        ViewTab.Notes => "Notes",
+        _ => "Side by side",
     };
+
+    private static string TabIcon(ViewTab t) => t switch
+    {
+        ViewTab.Original => "image",
+        ViewTab.Notes => "file-earmark-text",
+        _ => "layout-split",
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var saved = await JS.InvokeAsync<string?>("notepalPrefs.get", disposed.Token, ViewPreferenceKey);
+                if (Enum.TryParse<ViewTab>(saved, out var preferred) && Enum.IsDefined(preferred) && preferred != tab)
+                {
+                    tab = preferred;
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or OperationCanceledException)
+            {
+                // The preference is optional; keep the default view.
+            }
+        }
+    }
+
+    private async Task SetTabAsync(ViewTab value)
+    {
+        tab = value;
+        try
+        {
+            await JS.InvokeVoidAsync("notepalPrefs.set", disposed.Token, ViewPreferenceKey, value.ToString());
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or OperationCanceledException)
+        {
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -256,6 +353,22 @@ else
         }
     }
 
+    private async Task StartTagEditAsync()
+    {
+        tagsDraft = note?.Tags ?? [];
+        editingTags = true;
+        await RunAsync(async () => knownTags = await Api.GetTagsAsync(disposed.Token));
+    }
+
+    private async Task SaveTagsAsync()
+    {
+        if (await RunAsync(async () => note = await Api.UpdateNoteTagsAsync(NoteId, tagsDraft, disposed.Token)))
+        {
+            editingTags = false;
+            SelectPage(current?.PageNumber ?? 1);
+        }
+    }
+
     private async Task DeleteAsync()
     {
         if (await RunAsync(() => Api.DeleteNoteAsync(NoteId)))
@@ -269,75 +382,102 @@ else
 
     private RenderFragment RenderOriginal(PageDto pg) => __builder =>
     {
-        <div class="original-viewer p-2">
-            @if (pg.ContentType.StartsWith("image/", StringComparison.Ordinal))
-            {
-                <a href="@FileUrl(NoteId, pg)" target="_blank" rel="noopener" title="Open full size">
-                    <img src="@FileUrl(NoteId, pg)" alt="Original of pg @pg.PageNumber: @pg.FileName" loading="lazy" />
+        <div class="pane">
+            <div class="pane-header">
+                <h2 class="pane-title"><Icon Name="image" /> Original</h2>
+                <span class="small text-body-secondary text-truncate" style="max-width: 60%;" title="@pg.FileName">@pg.FileName · @FormatSize(pg.SizeBytes)</span>
+                <a class="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" href="@FileUrl(NoteId, pg)" download="@pg.FileName" title="Download original">
+                    <Icon Name="file-earmark-arrow-down" /><span class="visually-hidden">Download original</span>
                 </a>
-            }
-            else if (pg.ContentType == "application/pdf")
-            {
-                <iframe src="@FileUrl(NoteId, pg)" title="Original PDF: @pg.FileName"></iframe>
-            }
-            else
-            {
-                <div class="text-center p-5">
-                    <div class="fs-1" aria-hidden="true">📄</div>
-                    <p class="mb-2">@pg.FileName</p>
-                    <p class="small text-body-secondary">Word documents cannot be previewed in the browser.</p>
-                    <a class="btn btn-outline-primary" href="@FileUrl(NoteId, pg)" download="@pg.FileName">Download original</a>
+            </div>
+            <div class="pane-body">
+                <div class="original-viewer p-3">
+                    @if (pg.ContentType.StartsWith("image/", StringComparison.Ordinal))
+                    {
+                        <a href="@FileUrl(NoteId, pg)" target="_blank" rel="noopener" title="Open full size">
+                            <img src="@FileUrl(NoteId, pg)" alt="Original of page @pg.PageNumber: @pg.FileName" loading="lazy" />
+                        </a>
+                    }
+                    else if (pg.ContentType == "application/pdf")
+                    {
+                        <iframe src="@FileUrl(NoteId, pg)" title="Original PDF: @pg.FileName"></iframe>
+                    }
+                    else
+                    {
+                        <div class="text-center p-5">
+                            <span class="feature-icon mb-3"><Icon Name="file-earmark-text" /></span>
+                            <p class="mb-1 fw-semibold">@pg.FileName</p>
+                            <p class="small text-body-secondary">Word documents cannot be previewed in the browser.</p>
+                            <a class="btn btn-outline-primary" href="@FileUrl(NoteId, pg)" download="@pg.FileName">Download original</a>
+                        </div>
+                    }
                 </div>
-            }
+            </div>
         </div>
-        <div class="small text-body-secondary mt-1">@pg.FileName · @(pg.SizeBytes / 1024) KB</div>
     };
 
     private RenderFragment RenderEditor(PageDto pg) => __builder =>
     {
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-            <StatusBadge Status="pg.Status" />
-            @if (pg.IsEdited)
-            {
-                <span class="badge text-bg-warning" title="This pg contains your corrections">Edited</span>
-            }
-            @if (IsDirty(pg))
-            {
-                <span class="badge text-bg-primary">Unsaved changes</span>
-            }
-        </div>
-
-        @if (pg.Status == ProcessingStatus.Failed && !string.IsNullOrEmpty(pg.Error))
-        {
-            <div class="alert alert-warning small">@pg.Error You can still type the notes yourself below.</div>
-        }
-
-        @if (IsProcessing(pg.Status) && string.IsNullOrEmpty(pg.Text))
-        {
-            <div class="d-flex align-items-center gap-2 text-body-secondary p-4">
-                <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
-                Reading the pg with AI… this usually takes a few seconds.
-            </div>
-        }
-        else
-        {
-            <label class="visually-hidden" for="editor-@pg.Id">Notes text for pg @pg.PageNumber</label>
-            <textarea @key="(pg.Id, editorVersion)" id="editor-@pg.Id" class="form-control notes-editor" spellcheck="true"
-                      value="@GetText(pg)" @onchange="e => SetText(pg, e.Value?.ToString())"></textarea>
-            <div class="d-flex flex-wrap gap-2 mt-2">
-                <button class="btn btn-primary" type="button" disabled="@(Busy || !IsDirty(pg))" @onclick="() => SaveTextAsync(pg, GetText(pg))">Save corrections</button>
-                <button class="btn btn-outline-secondary" type="button" disabled="@(!IsDirty(pg))" @onclick="() => Discard(pg)">Discard changes</button>
-                @if (pg.IsEdited && pg.ExtractedText is not null)
+        <div class="pane">
+            <div class="pane-header">
+                <h2 class="pane-title"><Icon Name="file-earmark-text" /> Notes</h2>
+                <StatusBadge Status="pg.Status" />
+                @if (pg.IsEdited)
                 {
-                    <button class="btn btn-outline-secondary" type="button" disabled="@Busy" @onclick="() => SaveTextAsync(pg, pg.ExtractedText)">Revert to AI text</button>
+                    <span class="status-pill status-warning" title="This page contains your corrections"><Icon Name="pencil" /> Edited</span>
                 }
-                <button class="btn btn-outline-secondary ms-auto" type="button" disabled="@(Busy || IsProcessing(pg.Status))" @onclick="() => ReprocessAsync(pg)"
+                @if (IsDirty(pg))
+                {
+                    <span class="status-pill status-primary">Unsaved changes</span>
+                }
+                <button class="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" type="button" disabled="@(Busy || IsProcessing(pg.Status))" @onclick="() => ReprocessAsync(pg)"
                         title="Run text extraction again. Your saved corrections are kept.">
-                    🔄 Re-run extraction
+                    <Icon Name="arrow-repeat" /> <span class="d-none d-md-inline">Re-run extraction</span>
+                    <span class="visually-hidden d-md-none">Re-run extraction</span>
                 </button>
             </div>
-        }
+            <div class="pane-body">
+                @if (pg.Status == ProcessingStatus.Failed && !string.IsNullOrEmpty(pg.Error))
+                {
+                    <div class="alert alert-warning small d-flex gap-2"><Icon Name="exclamation-triangle" Class="mt-1" /> <div>@pg.Error You can still type the notes yourself below.</div></div>
+                }
+
+                @if (IsProcessing(pg.Status) && string.IsNullOrEmpty(pg.Text))
+                {
+                    <div class="d-flex flex-column align-items-center justify-content-center gap-2 text-body-secondary p-5 text-center flex-grow-1">
+                        <span class="feature-icon"><Icon Name="stars" /></span>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                            Reading the page with AI… this usually takes a few seconds.
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <label class="visually-hidden" for="editor-@pg.Id">Notes text for page @pg.PageNumber</label>
+                    <textarea @key="(pg.Id, editorVersion)" id="editor-@pg.Id" class="form-control notes-editor" spellcheck="true"
+                              value="@GetText(pg)" @onchange="e => SetText(pg, e.Value?.ToString())"></textarea>
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                        <button class="btn btn-primary d-inline-flex align-items-center gap-1" type="button" disabled="@(Busy || !IsDirty(pg))" @onclick="() => SaveTextAsync(pg, GetText(pg))">
+                            <Icon Name="check2" /> Save corrections
+                        </button>
+                        <button class="btn btn-outline-secondary" type="button" disabled="@(!IsDirty(pg))" @onclick="() => Discard(pg)">Discard changes</button>
+                        @if (pg.IsEdited && pg.ExtractedText is not null)
+                        {
+                            <button class="btn btn-outline-secondary d-inline-flex align-items-center gap-1" type="button" disabled="@Busy" @onclick="() => SaveTextAsync(pg, pg.ExtractedText)">
+                                <Icon Name="arrow-counterclockwise" /> Revert to AI text
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
     };
+
+    private string PageChipTitle(PageDto p) => IsDirty(p) ? $"Page {p.PageNumber} (unsaved changes)" : $"Page {p.PageNumber}";
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB";
 
     public void Dispose()
     {

@@ -1,34 +1,38 @@
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">📝 Notepal</a>
-    </div>
+<div class="sidebar-header">
+    <a class="brand" href="">
+        <span class="brand-mark" aria-hidden="true"><Icon Name="journal-text" /></span>
+        <span class="brand-name">Notepal</span>
+    </a>
+    <label class="nav-toggle" for="nav-toggle" title="Navigation menu">
+        <Icon Name="list" Size="1.4em" />
+        <span class="visually-hidden">Toggle navigation menu</span>
+    </label>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+<input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-hidden="true" tabindex="-1" />
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
+<div class="nav-scrollable" onclick="document.getElementById('nav-toggle').checked = false">
+    <nav class="nav flex-column gap-1" aria-label="Main">
+        <NavLink class="side-link" href="" Match="NavLinkMatch.All">
+            <Icon Name="house-door" /> <span>Home</span>
+        </NavLink>
         <AuthorizeView>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="notes" Match="NavLinkMatch.All">
-                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> My notes
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="notes/new">
-                    <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> New note
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="search">
-                    <span class="bi bi-search-nav-menu" aria-hidden="true"></span> Search
-                </NavLink>
-            </div>
+            <NavLink class="side-link" href="notes" Match="NavLinkMatch.All">
+                <Icon Name="journal-text" /> <span>My notes</span>
+            </NavLink>
+            <NavLink class="side-link" href="search">
+                <Icon Name="search" /> <span>Search</span>
+            </NavLink>
+            <a class="btn btn-primary new-note-btn my-3" href="notes/new">
+                <Icon Name="plus-lg" /> New note
+            </a>
         </AuthorizeView>
+        <div class="side-section">Help</div>
+        <NavLink class="side-link" href="about">
+            <Icon Name="info-circle" /> <span>About</span>
+        </NavLink>
+        <NavLink class="side-link" href="faq">
+            <Icon Name="question-circle" /> <span>FAQ</span>
+        </NavLink>
     </nav>
 </div>

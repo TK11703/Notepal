@@ -1,0 +1,105 @@
+@* Add/remove tags for a note. Type a tag and press Enter (or a comma), or pick one you have used before. *@
+<div class="tag-editor">
+    <div class="tag-editor-field">
+        @foreach (var tag in Tags)
+        {
+            <span class="tag-chip">
+                <Icon Name="tag" /> @tag
+                <button type="button" class="tag-chip-remove" aria-label="Remove tag @tag" title="Remove" @onclick="() => RemoveAsync(tag)"><Icon Name="x" /></button>
+            </span>
+        }
+        @if (Tags.Count < TagLimits.MaxTagsPerNote)
+        {
+            <input id="@InputId" class="tag-editor-input" type="text" autocomplete="off" maxlength="@(TagLimits.MaxTagLength * 4)"
+                   placeholder="@(Tags.Count == 0 ? "Add a tag, e.g. biology" : "Add another tag")" aria-label="Add a tag"
+                   aria-describedby="@($"{InputId}-help")"
+                   @bind="draft" @bind:event="oninput" @bind:after="OnDraftChangedAsync" @onkeydown="OnKeyDownAsync" />
+        }
+    </div>
+
+    @if (Matches.Count > 0)
+    {
+        <div class="tag-suggestions" role="group" aria-label="Previously used tags">
+            <span class="tag-suggestions-label">@(string.IsNullOrWhiteSpace(draft) ? "Previously used:" : "Matching tags:")</span>
+            @foreach (var suggestion in Matches)
+            {
+                <button type="button" class="tag-chip tag-chip-suggest" title="Add tag “@suggestion.Name” (used on @suggestion.Count @(suggestion.Count == 1 ? "note" : "notes"))"
+                        @onclick="() => AddAsync(suggestion.Name)">
+                    <Icon Name="plus-lg" /> @suggestion.Name
+                </button>
+            }
+        </div>
+    }
+    <div id="@($"{InputId}-help")" class="form-text">Press Enter or comma to add a tag. Up to @TagLimits.MaxTagsPerNote tags per note.</div>
+</div>
+
+@code {
+    private const int MaxSuggestions = 12;
+    private string? draft;
+
+    [Parameter, EditorRequired] public IReadOnlyList<string> Tags { get; set; } = [];
+    [Parameter] public EventCallback<IReadOnlyList<string>> TagsChanged { get; set; }
+
+    /// <summary>Tags the user has used before (most used first); offered as one-click suggestions.</summary>
+    [Parameter] public IReadOnlyList<TagDto> Suggestions { get; set; } = [];
+    [Parameter] public string InputId { get; set; } = "tag-input";
+
+    private List<TagDto> Matches
+    {
+        get
+        {
+            if (Tags.Count >= TagLimits.MaxTagsPerNote)
+            {
+                return [];
+            }
+
+            var filter = TagLimits.Normalize(draft);
+            return Suggestions
+                .Where(s => !Tags.Contains(s.Name) && (filter is null || s.Name.Contains(filter, StringComparison.Ordinal)))
+                .OrderBy(s => filter is not null && !s.Name.StartsWith(filter, StringComparison.Ordinal))
+                .Take(MaxSuggestions)
+                .ToList();
+        }
+    }
+
+    private async Task OnDraftChangedAsync()
+    {
+        // A comma (typed or pasted) completes the tag(s) before it.
+        if (draft is not null && draft.Contains(','))
+        {
+            var parts = draft.Split(',');
+            draft = parts[^1];
+            await AddAsync(parts[..^1]);
+        }
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            var value = draft;
+            draft = null;
+            await AddAsync(value);
+        }
+        else if (e.Key == "Backspace" && string.IsNullOrEmpty(draft) && Tags.Count > 0)
+        {
+            await RemoveAsync(Tags[^1]);
+        }
+    }
+
+    private Task AddAsync(params string?[] values)
+    {
+        var next = Tags.ToList();
+        foreach (var tag in values.Select(TagLimits.Normalize))
+        {
+            if (tag is not null && !next.Contains(tag) && next.Count < TagLimits.MaxTagsPerNote)
+            {
+                next.Add(tag);
+            }
+        }
+
+        return next.Count == Tags.Count ? Task.CompletedTask : TagsChanged.InvokeAsync(TagLimits.NormalizeAll(next));
+    }
+
+    private Task RemoveAsync(string tag) => TagsChanged.InvokeAsync(Tags.Where(t => t != tag).ToList());
+}

@@ -4,14 +4,30 @@
 
 <PageTitle>Search · Notepal</PageTitle>
 
-<h1 class="h3 mb-3">Search notes</h1>
+<div class="page-header">
+    <div>
+        <h1 class="h3">Search notes</h1>
+        <p class="page-subtitle">Search the text of every page you have captured, or narrow it down by one or more tags.</p>
+    </div>
+</div>
 
-<form class="mb-4" role="search" @onsubmit="SubmitAsync">
-    <div class="input-group">
+<form class="mb-4" role="search" @onsubmit="SubmitAsync" style="max-width: 48rem;">
+    <div class="input-group input-group-lg">
+        <span class="input-group-text bg-transparent"><Icon Name="search" /></span>
         <input class="form-control" type="search" placeholder="Search your notes, e.g. photosynthesis or &quot;project kickoff&quot;" aria-label="Search terms" @bind="query" />
         <button class="btn btn-primary" type="submit">Search</button>
     </div>
     <div class="form-text">Use quotes for phrases, <code>or</code> for alternatives and <code>-word</code> to exclude a word.</div>
+    @if (knownTags.Count > 0)
+    {
+        <div class="mt-3">
+            <TagMultiSelect Options="knownTags" Selected="ActiveTags" SelectedChanged="ApplyTags" Id="search-tags" />
+            @if (ActiveTags.Count > 1)
+            {
+                <div class="form-text">Showing notes that have all of the selected tags.</div>
+            }
+        </div>
+    }
 </form>
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
@@ -22,16 +38,20 @@
 }
 else if (result is not null)
 {
-    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches") for “@Q”</p>
-    <div class="list-group mb-3">
+    <p class="text-body-secondary small">@result.Total @(result.Total == 1 ? "match" : "matches")@(string.IsNullOrWhiteSpace(Q) ? null : $" for “{Q}”")@(ActiveTags.Count == 0 ? null : $" tagged {string.Join(" + ", ActiveTags.Select(t => $"“{t}”"))}")</p>
+    <div class="list-group mb-4 shadow-sm">
         @foreach (var hit in result.Items)
         {
-            <a class="list-group-item list-group-item-action" href="notes/@hit.NoteId?page=@hit.PageNumber">
+            <a class="list-group-item list-group-item-action search-hit" href="@(hit.PageNumber is null ? $"notes/{hit.NoteId}" : $"notes/{hit.NoteId}?page={hit.PageNumber}")">
                 <div class="d-flex justify-content-between gap-2">
-                    <strong class="text-truncate">@hit.Title</strong>
-                    <small class="text-body-secondary text-nowrap">Page @hit.PageNumber · @hit.UpdatedAt.LocalDateTime.ToString("d")</small>
+                    <span class="hit-title text-truncate">@hit.Title</span>
+                    <small class="text-body-secondary text-nowrap">@(hit.PageNumber is null ? null : $"Page {hit.PageNumber} · ")@hit.UpdatedAt.LocalDateTime.ToString("d")</small>
                 </div>
-                <div class="small mt-1"><HighlightedSnippet Text="@hit.Snippet" /></div>
+                @if (!string.IsNullOrWhiteSpace(hit.Snippet))
+                {
+                    <div class="small mt-2"><HighlightedSnippet Text="@hit.Snippet" /></div>
+                }
+                <TagChips Tags="hit.Tags" Class="mt-2" />
             </a>
         }
     </div>
@@ -42,27 +62,42 @@ else if (result is not null)
     private const int PageSize = 20;
 
     [SupplyParameterFromQuery] public string? Q { get; set; }
+    [SupplyParameterFromQuery(Name = "tag")] public string[]? Tag { get; set; }
 
     private string? query;
     private PagedResult<SearchResultDto>? result;
+    private IReadOnlyList<TagDto> knownTags = [];
+
+    private List<string> ActiveTags => TagLimits.NormalizeAll(Tag);
+
+    protected override Task OnInitializedAsync() => RunAsync(async () => knownTags = await Api.GetTagsAsync());
 
     protected override async Task OnParametersSetAsync()
     {
         query = Q;
         result = null;
-        if (!string.IsNullOrWhiteSpace(Q))
+        if (!string.IsNullOrWhiteSpace(Q) || ActiveTags.Count > 0)
         {
             await LoadAsync(1);
         }
     }
 
-    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q!, page, PageSize));
+    private Task LoadAsync(int page) => RunAsync(async () => result = await Api.SearchAsync(Q ?? string.Empty, page, PageSize, ActiveTags));
 
-    private void SubmitAsync()
+    private void SubmitAsync() => NavigateTo(query, ActiveTags);
+
+    private void ApplyTags(IReadOnlyList<string> tags) => NavigateTo(query, tags);
+
+    private void NavigateTo(string? terms, IReadOnlyList<string> tags)
     {
-        if (!string.IsNullOrWhiteSpace(query))
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(terms))
         {
-            Navigation.NavigateTo($"search?q={Uri.EscapeDataString(query.Trim())}");
+            parts.Add($"q={Uri.EscapeDataString(terms.Trim())}");
         }
+
+        parts.AddRange(TagLimits.NormalizeAll(tags).Select(t => $"tag={Uri.EscapeDataString(t)}"));
+
+        Navigation.NavigateTo(parts.Count == 0 ? "search" : $"search?{string.Join('&', parts)}");
     }
 }

@@ -1,0 +1,27 @@
+@* Read-only list of tag chips. When HrefFor is set each chip links somewhere (for example a filtered list). *@
+@if (Tags.Count > 0)
+{
+    <ul class="tag-list @Class" aria-label="Tags">
+        @foreach (var tag in Tags)
+        {
+            <li>
+                @if (HrefFor is null)
+                {
+                    <span class="tag-chip"><Icon Name="tag" /> @tag</span>
+                }
+                else
+                {
+                    <a class="tag-chip" href="@HrefFor(tag)" title="Show notes tagged “@tag”"><Icon Name="tag" /> @tag</a>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<string> Tags { get; set; } = [];
+    [Parameter] public Func<string, string>? HrefFor { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    public static string NotesHref(string tag) => $"notes?tag={Uri.EscapeDataString(tag)}";
+}

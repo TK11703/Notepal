@@ -8,18 +8,24 @@ side by side, and search everything you have captured. Every user only ever sees
 ## Features
 
 - **Capture**: live camera capture in the browser (`getUserMedia`), the device camera app on phones, or upload
-  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note.
+  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note,
+  and more pages can be appended to an existing note later (**Add pages**).
 - **Original storage**: the uploaded bytes are stored unchanged in PostgreSQL (`bytea`), alongside the extracted text.
 - **AI OCR**: images (and scanned PDF pages) are sent to a Foundry agent (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
   background queue and resumes automatically after a restart.
-- **Review & correct**: each page has tabs for **Original**, **Notes** and **Side by side**. Corrections are stored
+- **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
+- **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are
+  normalised (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
+  search results, and used to filter **My notes** (tag drop-down) and **Search** (multi-select: notes must have every selected tag,
+  with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
   scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
-- **Light / dark / auto theme** toggle (Bootstrap 5.3 colour modes, remembered per browser).
+- **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
+- **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
 ## Architecture
 
@@ -48,15 +54,18 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 
 | Method & route | Description |
 | --- | --- |
-| `GET /api/notes?page=&pageSize=` | The caller's notes, newest first |
-| `POST /api/notes` | `multipart/form-data` with `title` and one or more `files` (max 20 files, 20 MB each) |
+| `GET /api/notes?page=&pageSize=&tag=` | The caller's notes, newest first; repeat `tag` to require several tags |
+| `POST /api/notes` | `multipart/form-data` with `title`, optional `tags` (repeatable, max 20) and one or more `files` (max 20 files, 20 MB each) |
 | `GET /api/notes/{id}` | Note with its pages and text |
+| `POST /api/notes/{id}/pages` | `multipart/form-data` with one or more `files`, appended as new pages (the note's total stays within 20 pages) |
 | `PUT /api/notes/{id}` | Rename |
+| `PUT /api/notes/{id}/tags` | Replace the note's tags: `{ "tags": ["biology", "exam prep"] }` |
+| `GET /api/tags` | Tags the caller has used, with note counts (most used first) |
 | `DELETE /api/notes/{id}` | Delete note, pages and originals |
 | `GET /api/notes/{id}/pages/{pageId}/original` | Original file |
 | `PUT /api/notes/{id}/pages/{pageId}/text` | Save corrected text (sending the AI text back clears the correction) |
 | `POST /api/notes/{id}/pages/{pageId}/reprocess` | Re-run text extraction |
-| `GET /api/search?q=&page=&pageSize=` | Full-text search; matches in `snippet` are wrapped in `⟦ ⟧` |
+| `GET /api/search?q=&tag=&page=&pageSize=` | Full-text search, optionally limited to notes with the given tag(s); matches in `snippet` are wrapped in `⟦ ⟧`. With only `tag`, returns one result per tagged note |
 
 ## Run locally
 

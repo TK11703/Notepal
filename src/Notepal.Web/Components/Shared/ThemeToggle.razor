@@ -1,15 +1,25 @@
 @inject IJSRuntime JS
 
-<button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" title="Theme: @Label (click to change)" aria-label="Change colour theme, current: @Label" @onclick="CycleAsync">
-    <span aria-hidden="true">@Icon</span> <span class="d-none d-md-inline">@Label</span>
-</button>
+<div class="segmented segmented-sm" role="radiogroup" aria-label="Colour theme">
+    @foreach (var m in Modes)
+    {
+        <button type="button" role="radio" class="segmented-item @(mode == m.Value ? "active" : null)" aria-checked="@(mode == m.Value ? "true" : "false")"
+                title="@m.Label theme" @onclick="() => SetAsync(m.Value)">
+            <Icon Name="@m.Icon" />
+            <span class="visually-hidden">@m.Label</span>
+        </button>
+    }
+</div>
 
 @code {
-    private static readonly string[] Modes = ["light", "dark", "auto"];
-    private string mode = "auto";
+    private static readonly (string Value, string Label, string Icon)[] Modes =
+    [
+        ("light", "Light", "sun-fill"),
+        ("dark", "Dark", "moon-stars-fill"),
+        ("auto", "Auto (system)", "circle-half"),
+    ];
 
-    private string Icon => mode switch { "light" => "☀️", "dark" => "🌙", _ => "🌓" };
-    private string Label => mode switch { "light" => "Light", "dark" => "Dark", _ => "Auto" };
+    private string mode = "auto";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -20,9 +30,8 @@
         }
     }
 
-    private async Task CycleAsync()
+    private async Task SetAsync(string next)
     {
-        var next = Modes[(Array.IndexOf(Modes, mode) + 1) % Modes.Length];
         mode = await JS.InvokeAsync<string>("notepalTheme.set", next);
     }
 }
