@@ -1,6 +1,6 @@
 @* Compact drop-down for choosing any number of tags. Selected tags are shown as removable chips next to the button. *@
 <div class="tag-multiselect">
-    <div class="tag-multiselect-anchor">
+    <div class="tag-multiselect-anchor" @onkeydown="OnKeyDown">
         <button type="button" id="@Id" class="btn btn-sm btn-outline-secondary tag-multiselect-toggle d-inline-flex align-items-center gap-1"
                 aria-haspopup="true" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"{Id}-panel")" @onclick="Toggle">
             <Icon Name="tags" /> @(Selected.Count == 0 ? "Filter by tags" : $"Tags ({Selected.Count})")
@@ -10,7 +10,7 @@
         @if (open)
         {
             <div class="tag-multiselect-backdrop" @onclick="Close"></div>
-            <div id="@($"{Id}-panel")" class="tag-multiselect-panel" role="group" aria-label="Choose tags" @onkeydown="OnKeyDown">
+            <div id="@($"{Id}-panel")" class="tag-multiselect-panel" role="group" aria-label="Choose tags">
                 @if (Options.Count > 8)
                 {
                     <input class="form-control form-control-sm mb-2" type="search" placeholder="Find a tag…" aria-label="Find a tag"

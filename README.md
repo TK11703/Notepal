@@ -8,7 +8,8 @@ side by side, and search everything you have captured. Every user only ever sees
 ## Features
 
 - **Capture**: live camera capture in the browser (`getUserMedia`), the device camera app on phones, or upload
-  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note.
+  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note,
+  and more pages can be appended to an existing note later (**Add pages**).
 - **Original storage**: the uploaded bytes are stored unchanged in PostgreSQL (`bytea`), alongside the extracted text.
 - **AI OCR**: images (and scanned PDF pages) are sent to a Foundry agent (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
@@ -17,7 +18,8 @@ side by side, and search everything you have captured. Every user only ever sees
   separately from the AI text, so you can revert or re-run extraction at any time.
 - **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are
   normalised (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
-  search results, and used to filter **My notes** and **Search** (with or without search terms).
+  search results, and used to filter **My notes** (tag drop-down) and **Search** (multi-select: notes must have every selected tag,
+  with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
@@ -55,6 +57,7 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 | `GET /api/notes?page=&pageSize=&tag=` | The caller's notes, newest first; repeat `tag` to require several tags |
 | `POST /api/notes` | `multipart/form-data` with `title`, optional `tags` (repeatable, max 20) and one or more `files` (max 20 files, 20 MB each) |
 | `GET /api/notes/{id}` | Note with its pages and text |
+| `POST /api/notes/{id}/pages` | `multipart/form-data` with one or more `files`, appended as new pages (the note's total stays within 20 pages) |
 | `PUT /api/notes/{id}` | Rename |
 | `PUT /api/notes/{id}/tags` | Replace the note's tags: `{ "tags": ["biology", "exam prep"] }` |
 | `GET /api/tags` | Tags the caller has used, with note counts (most used first) |
