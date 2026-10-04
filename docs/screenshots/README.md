@@ -22,10 +22,11 @@ Captured from the web app at 1440×900 (mobile at 390×844) with sample data.
 | ![Edit tags, light](light-note-edit-tags.png) | ![Edit tags, dark](dark-note-edit-tags.png) |
 | ![Tag filter, light](light-my-notes-tag-filter.png) | ![Tag filter, dark](dark-my-notes-tag-filter.png) |
 
-## My notes, Search (text + multi-tag picker), Add pages, New note (with tags), Welcome
+## Home, My notes, Search (text + multi-tag picker), Add pages, New note (with tags), Welcome
 
 | Light | Dark |
 | --- | --- |
+| ![Home, light](light-home.png) | ![Home, dark](dark-home.png) |
 | ![My notes, light](light-my-notes.png) | ![My notes, dark](dark-my-notes.png) |
 | ![Search, light](light-search.png) | ![Search, dark](dark-search.png) |
 | ![Search multi-tag picker, light](light-search-tags-open.png) | ![Search multi-tag picker, dark](dark-search-tags-open.png) |
