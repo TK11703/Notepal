@@ -67,11 +67,14 @@ public static class NotesEndpoints
 
     private static async Task<IResult> GetNote(Guid noteId, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
-        var note = await db.Notes.AsNoTracking().Include(n => n.Pages)
-            .FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        var access = await db.GetAccessAsync(noteId, user, ct);
+        if (access is null)
+        {
+            return Results.NotFound();
+        }
 
-        return note is null ? Results.NotFound() : Results.Ok(note.ToDto());
+        var note = await db.Notes.AsNoTracking().Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId, ct);
+        return note is null ? Results.NotFound() : Results.Ok(note.ToDto(access));
     }
 
     private static async Task<IResult> CreateNote(HttpRequest request, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
@@ -138,38 +141,36 @@ public static class NotesEndpoints
 
     private static async Task<IResult> UpdateNote(Guid noteId, UpdateNoteRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
         var title = body.Title?.Trim();
         if (string.IsNullOrEmpty(title) || title.Length > MaxTitleLength)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["title"] = [$"Title is required and must be at most {MaxTitleLength} characters."] });
         }
 
-        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        var (note, access, denied) = await LoadEditableNoteAsync(db, noteId, user, ct);
         if (note is null)
         {
-            return Results.NotFound();
+            return denied;
         }
 
         note.Title = title;
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        return Results.Ok(note.ToDto());
+        return Results.Ok(note.ToDto(access));
     }
 
     /// <summary>Appends uploaded files as new pages at the end of an existing note.</summary>
     private static async Task<IResult> AddPages(Guid noteId, HttpRequest request, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
         if (!request.HasFormContentType)
         {
             return Results.Problem("Expected a multipart/form-data request.", statusCode: StatusCodes.Status415UnsupportedMediaType);
         }
 
-        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        var (note, access, denied) = await LoadEditableNoteAsync(db, noteId, user, ct);
         if (note is null)
         {
-            return Results.NotFound();
+            return denied;
         }
 
         var form = await request.ReadFormAsync(ct);
@@ -192,7 +193,8 @@ public static class NotesEndpoints
 
         var now = DateTimeOffset.UtcNow;
         var next = note.Pages.Count == 0 ? 1 : note.Pages.Max(p => p.PageNumber) + 1;
-        var (pages, errors) = await ReadPagesAsync(files, ownerId, next, now, ct);
+        // Pages always belong to the note's owner, also when a contributor adds them.
+        var (pages, errors) = await ReadPagesAsync(files, note.OwnerId, next, now, ct);
         if (errors.Count > 0)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = [.. errors] });
@@ -213,7 +215,25 @@ public static class NotesEndpoints
             queue.Enqueue(page.Id);
         }
 
-        return Results.Ok(note.ToDto());
+        return Results.Ok(note.ToDto(access));
+    }
+
+    /// <summary>Loads a note (with its pages, tracked) the caller may edit: its owner or a contributor it is shared with.</summary>
+    private static async Task<(Note? Note, NoteAccess? Access, IResult Denied)> LoadEditableNoteAsync(NotepalDbContext db, Guid noteId, ICurrentUser user, CancellationToken ct)
+    {
+        var access = await db.GetAccessAsync(noteId, user, ct);
+        if (access is null)
+        {
+            return (null, null, Results.NotFound());
+        }
+
+        if (!access.CanEdit)
+        {
+            return (null, access, NoteAccess.ReadOnly());
+        }
+
+        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId, ct);
+        return (note, access, Results.NotFound());
     }
 
     /// <summary>Validates uploaded files (size, extension and signature) and turns them into pending pages numbered from <paramref name="firstNumber"/>.</summary>
@@ -263,23 +283,22 @@ public static class NotesEndpoints
 
     private static async Task<IResult> UpdateNoteTags(Guid noteId, UpdateNoteTagsRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
         var tags = TagLimits.NormalizeAll(body.Tags);
         if (tags.Count > TagLimits.MaxTagsPerNote)
         {
             return TooManyTags();
         }
 
-        var note = await db.Notes.Include(n => n.Pages).FirstOrDefaultAsync(n => n.Id == noteId && n.OwnerId == ownerId, ct);
+        var (note, access, denied) = await LoadEditableNoteAsync(db, noteId, user, ct);
         if (note is null)
         {
-            return Results.NotFound();
+            return denied;
         }
 
         note.Tags = tags;
         note.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        return Results.Ok(note.ToDto());
+        return Results.Ok(note.ToDto(access));
     }
 
     /// <summary>All tags the caller has used, most used first, so the UI can suggest them.</summary>
@@ -309,14 +328,24 @@ public static class NotesEndpoints
     {
         var ownerId = user.UserId!;
         var deleted = await db.Notes.Where(n => n.Id == noteId && n.OwnerId == ownerId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? Results.NotFound() : Results.NoContent();
+        if (deleted > 0)
+        {
+            return Results.NoContent();
+        }
+
+        // People a note is shared with can see it, but only its owner can delete it.
+        return await db.GetAccessAsync(noteId, user, ct) is null ? Results.NotFound() : NoteAccess.OwnerOnly("delete it");
     }
 
     private static async Task<IResult> GetOriginal(Guid noteId, Guid pageId, NotepalDbContext db, ICurrentUser user, HttpContext http, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
+        if (await db.GetAccessAsync(noteId, user, ct) is null)
+        {
+            return Results.NotFound();
+        }
+
         var original = await db.Pages
-            .Where(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId)
+            .Where(p => p.Id == pageId && p.NoteId == noteId)
             .Select(p => new { p.FileName, p.ContentType, p.UpdatedAt, Data = p.Content!.Data })
             .FirstOrDefaultAsync(ct);
 
@@ -338,14 +367,19 @@ public static class NotesEndpoints
 
     private static async Task<IResult> UpdatePageText(Guid noteId, Guid pageId, UpdatePageTextRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
         if (body.Text is null || body.Text.Length > MaxTextLength)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["text"] = [$"Text is required and must be at most {MaxTextLength} characters."] });
         }
 
+        var denied = await CheckEditableAsync(db, noteId, user, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
         var page = await db.Pages.Include(p => p.Note)
-            .FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId, ct);
+            .FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId, ct);
         if (page is null)
         {
             return Results.NotFound();
@@ -360,8 +394,13 @@ public static class NotesEndpoints
 
     private static async Task<IResult> ReprocessPage(Guid noteId, Guid pageId, NotepalDbContext db, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
-        var ownerId = user.UserId!;
-        var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId && p.OwnerId == ownerId, ct);
+        var denied = await CheckEditableAsync(db, noteId, user, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        var page = await db.Pages.FirstOrDefaultAsync(p => p.Id == pageId && p.NoteId == noteId, ct);
         if (page is null)
         {
             return Results.NotFound();
@@ -382,7 +421,14 @@ public static class NotesEndpoints
         return Results.Accepted(value: page.ToDto());
     }
 
-    private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
+    /// <summary>Returns an error result unless the caller owns the note or is a contributor on it.</summary>
+    private static async Task<IResult?> CheckEditableAsync(NotepalDbContext db, Guid noteId, ICurrentUser user, CancellationToken ct)
+    {
+        var access = await db.GetAccessAsync(noteId, user, ct);
+        return access is null ? Results.NotFound() : access.CanEdit ? null : NoteAccess.ReadOnly();
+    }
+
+    internal static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 }
 
 internal static class TagFilter

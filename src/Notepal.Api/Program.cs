@@ -86,6 +86,7 @@ app.MapHealthChecks("/healthz").AllowAnonymous();
 app.MapGroup("/api")
     .RequireAuthorization("NotesUser")
     .MapNotesEndpoints()
+    .MapSharingEndpoints()
     .MapSearchEndpoints();
 
 app.Run();

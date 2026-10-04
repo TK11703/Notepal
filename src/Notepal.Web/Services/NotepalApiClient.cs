@@ -77,6 +77,28 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     public Task<PageDto> ReprocessPageAsync(Guid noteId, Guid pageId, CancellationToken ct = default) =>
         SendAsync<PageDto>(HttpMethod.Post, $"api/notes/{noteId}/pages/{pageId}/reprocess", null, ct);
 
+    /// <summary>People the note is shared with (owner only).</summary>
+    public Task<List<NoteShareDto>> GetSharesAsync(Guid noteId, CancellationToken ct = default) =>
+        SendAsync<List<NoteShareDto>>(HttpMethod.Get, $"api/notes/{noteId}/shares", null, ct);
+
+    /// <summary>Shares the note with someone, or updates their permission if it is already shared with them.</summary>
+    public Task<NoteShareDto> AddShareAsync(Guid noteId, AddNoteShareRequest request, CancellationToken ct = default) =>
+        SendAsync<NoteShareDto>(HttpMethod.Post, $"api/notes/{noteId}/shares", JsonContent.Create(request), ct);
+
+    public Task<NoteShareDto> UpdateShareAsync(Guid noteId, Guid shareId, SharePermission permission, CancellationToken ct = default) =>
+        SendAsync<NoteShareDto>(HttpMethod.Put, $"api/notes/{noteId}/shares/{shareId}", JsonContent.Create(new UpdateNoteShareRequest(permission)), ct);
+
+    public async Task RemoveShareAsync(Guid noteId, Guid shareId, CancellationToken ct = default) =>
+        await SendRawAsync(HttpMethod.Delete, $"api/notes/{noteId}/shares/{shareId}", null, ct);
+
+    /// <summary>Notes the user shared with others.</summary>
+    public Task<PagedResult<SharedNoteDto>> ListSharedByMeAsync(int page, int pageSize, CancellationToken ct = default) =>
+        SendAsync<PagedResult<SharedNoteDto>>(HttpMethod.Get, $"api/shared/by-me?page={page}&pageSize={pageSize}", null, ct);
+
+    /// <summary>Notes other people shared with the user.</summary>
+    public Task<PagedResult<SharedNoteDto>> ListSharedWithMeAsync(int page, int pageSize, CancellationToken ct = default) =>
+        SendAsync<PagedResult<SharedNoteDto>>(HttpMethod.Get, $"api/shared/with-me?page={page}&pageSize={pageSize}", null, ct);
+
     /// <summary>Full-text search; when tags are given, only notes that carry every one of them are searched.</summary>
     public Task<PagedResult<SearchResultDto>> SearchAsync(string query, int page, int pageSize, IReadOnlyList<string>? tags = null, CancellationToken ct = default) =>
         SendAsync<PagedResult<SearchResultDto>>(HttpMethod.Get, $"api/search?q={Uri.EscapeDataString(query)}&page={page}&pageSize={pageSize}{TagQuery(tags ?? [])}", null, ct);
