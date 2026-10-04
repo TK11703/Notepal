@@ -22,6 +22,29 @@ Captured from the web app at 1440×900 (mobile at 390×844) with sample data.
 | ![Edit tags, light](light-note-edit-tags.png) | ![Edit tags, dark](dark-note-edit-tags.png) |
 | ![Tag filter, light](light-my-notes-tag-filter.png) | ![Tag filter, dark](dark-my-notes-tag-filter.png) |
 
+## Sharing – Share button, Share dialog (people list, tenant search, add by email)
+
+| Light | Dark |
+| --- | --- |
+| ![Share button on a note, light](light-note-share-button.png) | ![Share button on a note, dark](dark-note-share-button.png) |
+| ![Share dialog, light](light-share-dialog.png) | ![Share dialog, dark](dark-share-dialog.png) |
+| ![Share dialog people search, light](light-share-search.png) | ![Share dialog people search, dark](dark-share-search.png) |
+| ![Share dialog add by email, light](light-share-email.png) | ![Share dialog add by email, dark](dark-share-email.png) |
+
+## Shared notes – Shared with me / Shared by me
+
+| Light | Dark |
+| --- | --- |
+| ![Shared with me, light](light-shared-with-me.png) | ![Shared with me, dark](dark-shared-with-me.png) |
+| ![Shared by me, light](light-shared-by-me.png) | ![Shared by me, dark](dark-shared-by-me.png) |
+
+## A shared note as a Contributor and as a Reader (no Share/Delete; Readers get read-only text)
+
+| Light | Dark |
+| --- | --- |
+| ![Shared note as contributor, light](light-shared-note-contributor.png) | ![Shared note as contributor, dark](dark-shared-note-contributor.png) |
+| ![Shared note as reader, light](light-shared-note-reader.png) | ![Shared note as reader, dark](dark-shared-note-reader.png) |
+
 ## Home, My notes, Search (text + multi-tag picker), Add pages, New note (with tags), Welcome
 
 | Light | Dark |
