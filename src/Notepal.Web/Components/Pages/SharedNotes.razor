@@ -30,6 +30,14 @@
 
 <ApiErrorAlert @bind-Message="ErrorMessage" />
 
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="alert alert-success d-flex align-items-center gap-2 py-2" role="status">
+        <Icon Name="check2" /> <span class="flex-grow-1">@statusMessage</span>
+        <button type="button" class="btn-close" aria-label="Dismiss" @onclick="() => statusMessage = null"></button>
+    </div>
+}
+
 @if (result is null)
 {
     <div class="spinner-border" role="status"><span class="visually-hidden">Loading…</span></div>
@@ -51,15 +59,58 @@ else if (result.Total == 0)
 }
 else
 {
+    @if (!ByMe)
+    {
+        <div class="shared-select-bar @(selected.Count > 0 ? "has-selection" : null)">
+            <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="select-all-shared"
+                       checked="@AllSelected" disabled="@Busy" @onchange="ToggleAll" />
+                <label class="form-check-label small" for="select-all-shared">
+                    @(selected.Count == 0 ? "Select all on this page" : $"{selected.Count} selected")
+                </label>
+            </div>
+            @if (confirmLeave && selected.Count > 0)
+            {
+                <span class="small text-body-secondary flex-grow-1">
+                    Leave @NotesCount(selected.Count)? You lose access until the owner shares @(selected.Count == 1 ? "it" : "them") again.
+                </span>
+                <button class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1" type="button" disabled="@Busy" @onclick="LeaveSelectedAsync">
+                    <Icon Name="box-arrow-left" /> Leave
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@Busy" @onclick="() => confirmLeave = false">Cancel</button>
+            }
+            else
+            {
+                <span class="flex-grow-1"></span>
+                @if (selected.Count > 0)
+                {
+                    <button class="btn btn-sm btn-link text-decoration-none" type="button" @onclick="ClearSelection">Clear</button>
+                }
+                <button class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" type="button"
+                        disabled="@(Busy || selected.Count == 0)" @onclick="() => confirmLeave = true"
+                        title="Remove your access to the selected notes">
+                    <Icon Name="box-arrow-left" /> Leave@(selected.Count > 0 ? $" ({selected.Count})" : null)
+                </button>
+            }
+        </div>
+    }
     <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-4">
         @foreach (var item in result.Items)
         {
             var note = item.Note;
+            var isSelected = selected.Contains(note.Id);
             <div class="col" @key="note.Id">
-                <a class="card h-100 note-card text-decoration-none text-body" href="notes/@note.Id">
+                <div class="card h-100 note-card position-relative @(isSelected ? "note-card-selected" : null)">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
-                            <h3 class="h6 card-title mb-0 text-truncate">@note.Title</h3>
+                            @if (!ByMe)
+                            {
+                                <input class="form-check-input note-select flex-shrink-0" type="checkbox" checked="@isSelected" disabled="@Busy"
+                                       aria-label="Select @note.Title" @onchange="() => Toggle(note.Id)" />
+                            }
+                            <h3 class="h6 card-title mb-0 text-truncate flex-grow-1">
+                                <a class="stretched-link text-decoration-none text-body" href="notes/@note.Id">@note.Title</a>
+                            </h3>
                             <StatusBadge Status="note.Status" />
                         </div>
                         <p class="card-text small note-preview mb-3 flex-grow-1">@(string.IsNullOrWhiteSpace(note.Preview) ? "No text yet." : note.Preview)</p>
@@ -88,7 +139,7 @@ else
                             <span class="d-inline-flex align-items-center gap-1"><Icon Name="file-earmark-text" /> @note.PageCount @(note.PageCount == 1 ? "page" : "pages")</span>
                         </div>
                     </div>
-                </a>
+                </div>
             </div>
         }
     </div>
@@ -101,6 +152,9 @@ else
     private PagedResult<SharedNoteDto>? result;
     private int? withMeTotal;
     private int? byMeTotal;
+    private readonly HashSet<Guid> selected = [];
+    private bool confirmLeave;
+    private string? statusMessage;
 
     [SupplyParameterFromQuery(Name = "view")] public string? View { get; set; }
 
@@ -109,11 +163,14 @@ else
     protected override async Task OnParametersSetAsync()
     {
         result = null;
+        statusMessage = null;
         await LoadAsync(1);
     }
 
     private Task LoadAsync(int page) => RunAsync(async () =>
     {
+        selected.Clear();
+        confirmLeave = false;
         // Load the selected list, plus the size of the other one for its tab.
         var withMe = Api.ListSharedWithMeAsync(ByMe ? 1 : page, ByMe ? 1 : PageSize);
         var byMe = Api.ListSharedByMeAsync(ByMe ? page : 1, ByMe ? PageSize : 1);
@@ -122,6 +179,62 @@ else
         byMeTotal = byMe.Result.Total;
         result = ByMe ? byMe.Result : withMe.Result;
     });
+
+    private bool AllSelected => result is { Items.Count: > 0 } r && r.Items.All(i => selected.Contains(i.Note.Id));
+
+    private void Toggle(Guid noteId)
+    {
+        if (!selected.Remove(noteId))
+        {
+            selected.Add(noteId);
+        }
+
+        confirmLeave = false;
+    }
+
+    private void ToggleAll()
+    {
+        if (AllSelected)
+        {
+            selected.Clear();
+        }
+        else if (result is not null)
+        {
+            selected.UnionWith(result.Items.Select(i => i.Note.Id));
+        }
+
+        confirmLeave = false;
+    }
+
+    private void ClearSelection()
+    {
+        selected.Clear();
+        confirmLeave = false;
+    }
+
+    private async Task LeaveSelectedAsync()
+    {
+        if (result is null || selected.Count == 0)
+        {
+            return;
+        }
+
+        var ids = selected.ToList();
+        var page = result.Page;
+        LeaveSharedNotesResult? left = null;
+        if (!await RunAsync(async () => left = await Api.LeaveSharedNotesAsync(ids)))
+        {
+            return;
+        }
+
+        // Stay on the same page unless it is now empty.
+        var remaining = result.Total - left!.Left;
+        var lastPage = Math.Max(1, (remaining + PageSize - 1) / PageSize);
+        await LoadAsync(Math.Min(page, lastPage));
+        statusMessage = $"You left {NotesCount(left.Left)}.";
+    }
+
+    private static string NotesCount(int count) => count == 1 ? "1 note" : $"{count} notes";
 
     private static string Describe(NoteShareDto share) =>
         $"{share.DisplayName ?? share.Email} ({share.Permission})";

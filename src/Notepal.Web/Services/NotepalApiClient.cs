@@ -99,6 +99,10 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     public Task<PagedResult<SharedNoteDto>> ListSharedWithMeAsync(int page, int pageSize, CancellationToken ct = default) =>
         SendAsync<PagedResult<SharedNoteDto>>(HttpMethod.Get, $"api/shared/with-me?page={page}&pageSize={pageSize}", null, ct);
 
+    /// <summary>Removes the user's access to notes other people shared with them.</summary>
+    public Task<LeaveSharedNotesResult> LeaveSharedNotesAsync(IReadOnlyList<Guid> noteIds, CancellationToken ct = default) =>
+        SendAsync<LeaveSharedNotesResult>(HttpMethod.Post, "api/shared/with-me/leave", JsonContent.Create(new LeaveSharedNotesRequest(noteIds)), ct);
+
     /// <summary>Full-text search; when tags are given, only notes that carry every one of them are searched.</summary>
     public Task<PagedResult<SearchResultDto>> SearchAsync(string query, int page, int pageSize, IReadOnlyList<string>? tags = null, CancellationToken ct = default) =>
         SendAsync<PagedResult<SearchResultDto>>(HttpMethod.Get, $"api/search?q={Uri.EscapeDataString(query)}&page={page}&pageSize={pageSize}{TagQuery(tags ?? [])}", null, ct);

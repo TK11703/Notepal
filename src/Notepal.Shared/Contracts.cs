@@ -108,6 +108,12 @@ public sealed record SharedNoteDto(
     DateTimeOffset SharedAt,
     IReadOnlyList<NoteShareDto> SharedWith);
 
+/// <summary>Removes the caller's access to notes other people shared with them (the notes themselves are not changed).</summary>
+public sealed record LeaveSharedNotesRequest(IReadOnlyList<Guid> NoteIds);
+
+/// <summary>How many of the requested notes the caller no longer has access to.</summary>
+public sealed record LeaveSharedNotesResult(int Left);
+
 /// <summary>A person found in the organisation's directory.</summary>
 public sealed record DirectoryUserDto(string Id, string DisplayName, string Email);
 
@@ -116,6 +122,7 @@ public static class ShareLimits
     public const int MaxSharesPerNote = 50;
     public const int MaxEmailLength = 254;
     public const int MaxDisplayNameLength = 200;
+    public const int MaxNotesPerLeave = 100;
 
     /// <summary>Trims and lower-cases an e-mail address; returns <c>null</c> unless it looks like <c>name@domain.tld</c>.</summary>
     public static string? NormalizeEmail(string? email)

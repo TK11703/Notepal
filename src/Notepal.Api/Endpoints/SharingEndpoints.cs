@@ -22,6 +22,7 @@ public static class SharingEndpoints
         var shared = api.MapGroup("/shared").WithTags("Sharing");
         shared.MapGet("/by-me", SharedByMe);
         shared.MapGet("/with-me", SharedWithMe);
+        shared.MapPost("/with-me/leave", LeaveSharedNotes);
 
         return api;
     }
@@ -234,6 +235,34 @@ public static class SharingEndpoints
             .ToList();
 
         return Results.Ok(new PagedResult<SharedNoteDto>(items, total, page, pageSize));
+    }
+
+    /// <summary>
+    /// The caller leaves one or more notes shared with them by removing their own shares. Shares of other people and
+    /// the caller's own notes are never touched; ids the caller has no share for are ignored.
+    /// </summary>
+    private static async Task<IResult> LeaveSharedNotes(LeaveSharedNotesRequest body, NotepalDbContext db, ICurrentUser user, CancellationToken ct)
+    {
+        var noteIds = (body.NoteIds ?? []).Where(id => id != Guid.Empty).Distinct().ToList();
+        if (noteIds.Count == 0)
+        {
+            return Invalid(nameof(body.NoteIds), "Choose at least one note to leave.");
+        }
+
+        if (noteIds.Count > ShareLimits.MaxNotesPerLeave)
+        {
+            return Invalid(nameof(body.NoteIds), $"You can leave up to {ShareLimits.MaxNotesPerLeave} notes at a time.");
+        }
+
+        var userId = user.UserId!;
+        var mine = db.NoteShares
+            .Where(NoteAccessQueries.IsFor(userId, user.Email))
+            .Where(s => noteIds.Contains(s.NoteId) && s.OwnerId != userId);
+
+        var left = await mine.Select(s => s.NoteId).Distinct().CountAsync(ct);
+        await mine.ExecuteDeleteAsync(ct);
+
+        return Results.Ok(new LeaveSharedNotesResult(left));
     }
 
     private static async Task<IResult?> RequireOwnerAsync(NotepalDbContext db, Guid noteId, ICurrentUser user, CancellationToken ct)

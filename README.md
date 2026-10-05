@@ -26,7 +26,8 @@ side by side, and search everything you have captured. Every user only ever sees
   (Microsoft Graph, delegated `User.ReadBasic.All`) or types any email address, then gives each person **Reader**
   (view and download originals) or **Contributor** (also rename, tag, add pages, correct text, re-run extraction) access.
   Only the owner can change sharing or delete the note. **Shared notes** in the left
-  navigation lists notes *shared with me* and notes *shared by me*.
+  navigation lists notes *shared with me* and notes *shared by me*; on *Shared with me* you can tick one or more notes
+  (or **Select all**) and **Leave** them to remove your access.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
   scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
   A note is visible to anyone else only when its owner shares it with them (matched by `oid` or sign-in email).
@@ -76,6 +77,7 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 | `PUT /api/notes/{id}/shares/{shareId}` | Change a person's permission (owner only) |
 | `DELETE /api/notes/{id}/shares/{shareId}` | Stop sharing (owner), or leave a note shared with you (recipient) |
 | `GET /api/shared/with-me?page=&pageSize=` | Notes other people shared with the caller, with role and sharer |
+| `POST /api/shared/with-me/leave` | Leave notes shared with the caller: `{ "noteIds": ["…"] }` (up to 100); removes only the caller's own shares and returns `{ "left": n }` |
 | `GET /api/shared/by-me?page=&pageSize=` | The caller's notes that are shared, with their recipients |
 | `GET /api/search?q=&tag=&page=&pageSize=` | Full-text search, optionally limited to notes with the given tag(s); matches in `snippet` are wrapped in `⟦ ⟧`. With only `tag`, returns one result per tagged note |
 

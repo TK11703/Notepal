@@ -160,6 +160,50 @@ public sealed class SharingApiTests(NotepalApiFactory factory) : IClassFixture<N
     }
 
     [Fact]
+    public async Task Recipient_can_leave_several_shared_notes_at_once()
+    {
+        var alice = NewPerson();
+        var bob = NewPerson();
+        var carol = NewPerson();
+        var first = await UploadAsync(alice.Client, "Leave one", ("a.png", TestFiles.Png));
+        var second = await UploadAsync(alice.Client, "Leave two", ("a.png", TestFiles.Png));
+        var kept = await UploadAsync(alice.Client, "Keep", ("a.png", TestFiles.Png));
+        var bobsOwn = await UploadAsync(bob.Client, "Bob's own", ("a.png", TestFiles.Png));
+        await ShareAsync(alice, first.Id, new AddNoteShareRequest(bob.Email, UserId: bob.Id));
+        await ShareAsync(alice, second.Id, new AddNoteShareRequest(bob.Email, Permission: SharePermission.Contributor));
+        await ShareAsync(alice, kept.Id, new AddNoteShareRequest(bob.Email));
+        await ShareAsync(alice, first.Id, new AddNoteShareRequest(carol.Email));
+        await ShareAsync(bob, bobsOwn.Id, new AddNoteShareRequest(carol.Email));
+
+        // Bob's own note and a note he has no share for are ignored.
+        var response = await bob.Client.PostAsJsonAsync("/api/shared/with-me/leave",
+            new LeaveSharedNotesRequest([first.Id, second.Id, bobsOwn.Id, Guid.NewGuid()]));
+        response.EnsureSuccessStatusCode();
+        Assert.Equal(2, (await response.Content.ReadFromJsonAsync<LeaveSharedNotesResult>())!.Left);
+
+        var withMe = (await bob.Client.GetFromJsonAsync<PagedResult<SharedNoteDto>>("/api/shared/with-me"))!;
+        Assert.Equal([kept.Id], withMe.Items.Select(i => i.Note.Id));
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.Client.GetAsync($"/api/notes/{first.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.Client.GetAsync($"/api/notes/{second.Id}")).StatusCode);
+
+        // Other people's shares and the notes themselves are untouched.
+        Assert.Equal(HttpStatusCode.OK, (await carol.Client.GetAsync($"/api/notes/{first.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await carol.Client.GetAsync($"/api/notes/{bobsOwn.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await alice.Client.GetAsync($"/api/notes/{second.Id}")).StatusCode);
+        var aliceShares = (await alice.Client.GetFromJsonAsync<List<NoteShareDto>>($"/api/notes/{first.Id}/shares"))!;
+        Assert.Equal([carol.Email], aliceShares.Select(s => s.Email));
+    }
+
+    [Fact]
+    public async Task Leaving_requires_note_ids_within_the_limit()
+    {
+        var bob = NewPerson();
+        Assert.Equal(HttpStatusCode.BadRequest, (await bob.Client.PostAsJsonAsync("/api/shared/with-me/leave", new LeaveSharedNotesRequest([]))).StatusCode);
+        var tooMany = Enumerable.Range(0, ShareLimits.MaxNotesPerLeave + 1).Select(_ => Guid.NewGuid()).ToList();
+        Assert.Equal(HttpStatusCode.BadRequest, (await bob.Client.PostAsJsonAsync("/api/shared/with-me/leave", new LeaveSharedNotesRequest(tooMany))).StatusCode);
+    }
+
+    [Fact]
     public async Task Invalid_shares_are_rejected()
     {
         var alice = NewPerson();

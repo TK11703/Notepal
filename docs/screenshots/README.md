@@ -38,6 +38,14 @@ Captured from the web app at 1440×900 (mobile at 390×844) with sample data.
 | ![Shared with me, light](light-shared-with-me.png) | ![Shared with me, dark](dark-shared-with-me.png) |
 | ![Shared by me, light](light-shared-by-me.png) | ![Shared by me, dark](dark-shared-by-me.png) |
 
+## Shared with me – select notes and leave them (selection, confirmation, result)
+
+| Light | Dark |
+| --- | --- |
+| ![Notes selected, light](light-shared-leave-select.png) | ![Notes selected, dark](dark-shared-leave-select.png) |
+| ![Confirm leave, light](light-shared-leave-confirm.png) | ![Confirm leave, dark](dark-shared-leave-confirm.png) |
+| ![Left notes, light](light-shared-leave-done.png) | ![Left notes, dark](dark-shared-leave-done.png) |
+
 ## A shared note as a Contributor and as a Reader (no Share/Delete; Readers get read-only text)
 
 | Light | Dark |

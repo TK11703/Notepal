@@ -1077,3 +1077,37 @@ button.tag-chip {
     .avatar-stack .avatar + .avatar {
         margin-left: -.45rem;
     }
+
+.shared-select-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem .75rem;
+    padding: .5rem .75rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius-lg);
+    background: var(--np-surface);
+    min-height: 3rem;
+}
+
+    .shared-select-bar.has-selection {
+        border-color: var(--bs-primary-border-subtle);
+        background: var(--bs-primary-bg-subtle);
+    }
+
+.note-select {
+    position: relative;
+    z-index: 2;
+    margin-top: .2rem;
+    cursor: pointer;
+}
+
+.note-card-selected {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 1px var(--bs-primary);
+}
+
+    .note-card-selected:hover {
+        border-color: var(--bs-primary);
+    }
