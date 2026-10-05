@@ -131,23 +131,28 @@ jobs:
         env:
           PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
         run: |
-          registry=$(az deployment group create \
+          az deployment group create \
             --resource-group "$RG" \
             --name notepal-infra \
             --template-file infra/main.bicep \
             --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
                          postgresAdminPassword="$PG_ADMIN_SECRET" \
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
-            --query properties.outputs.registryName.value --output tsv)
+            --no-wait
+          bash infra/scripts/watch-deployment.sh "$RG" notepal-infra
+          registry=$(az deployment group show --resource-group "$RG" --name notepal-infra --query properties.outputs.registryName.value --output tsv)
           echo "registry=$registry" >> "$GITHUB_OUTPUT"
           echo "loginServer=$(az acr show --name "$registry" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
 
-      - name: Build images in ACR
+      - name: Build API image
         env:
           REGISTRY: ${{ steps.infra.outputs.registry }}
-        run: |
-          az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
-          az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
+        run: az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
+
+      - name: Build web image
+        env:
+          REGISTRY: ${{ steps.infra.outputs.registry }}
+        run: az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
 
       - name: Deploy container apps
         id: apps
@@ -155,7 +160,7 @@ jobs:
           PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           LOGIN_SERVER: ${{ steps.infra.outputs.loginServer }}
         run: |
-          outputs=$(az deployment group create \
+          az deployment group create \
             --resource-group "$RG" \
             --name notepal-apps \
             --template-file infra/main.bicep \
@@ -164,7 +169,9 @@ jobs:
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
                          apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
                          webImage="$LOGIN_SERVER/notepal-web:$TAG" \
-            --query properties.outputs --output json)
+            --no-wait
+          bash infra/scripts/watch-deployment.sh "$RG" notepal-apps
+          outputs=$(az deployment group show --resource-group "$RG" --name notepal-apps --query properties.outputs --output json)
           web_url=$(echo "$outputs" | jq -r .webUrl.value)
           principal=$(echo "$outputs" | jq -r .webIdentityPrincipalId.value)
           echo "webUrl=$web_url" >> "$GITHUB_OUTPUT"

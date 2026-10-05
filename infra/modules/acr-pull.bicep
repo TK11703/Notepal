@@ -8,7 +8,7 @@ type pullPrincipal = {
 param registryName string
 param principals pullPrincipal[]
 
-var acrPullRole = '7f951dda-4ed3-4ba8-8aa3-0b5a6f6e5ba5'
+var acrPullRole = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: registryName

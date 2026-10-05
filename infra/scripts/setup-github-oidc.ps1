@@ -7,7 +7,7 @@ $subscription = 'fdadb01b-83a6-4002-9eca-5ff098cdd3bd'
 $appRg = 'rg-notepal'
 $sharedRg = 'rg-common'
 $location = 'eastus'
-$acrPull = '7f951dda-4ed3-4ba8-8aa3-0b5a6f6e5ba5'
+$acrPull = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 $foundryUser = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 
 az account set --subscription $subscription
@@ -50,8 +50,9 @@ if ((az group exists --name $appRg) -ne 'true') {
 
 function Grant([string] $role, [string] $rg, [string] $condition) {
     $scope = "/subscriptions/$subscription/resourceGroups/$rg"
-    $has = @(az role assignment list --assignee $spId --scope $scope --role $role --query '[].id' -o tsv)
-    if ($has.Count -gt 0) { "  $role on $rg already assigned"; return }
+    $has = @(az role assignment list --assignee $spId --scope $scope --role $role --query '[].{id:id, condition:condition}' -o json | ConvertFrom-Json)
+    if ($has.Count -gt 0 -and $has[0].condition -eq ($condition ? $condition : $null)) { "  $role on $rg already assigned"; return }
+    if ($has.Count -gt 0) { az role assignment delete --ids $has[0].id }
     $azArgs = @('role', 'assignment', 'create', '--assignee-object-id', $spId, '--assignee-principal-type', 'ServicePrincipal', '--role', $role, '--scope', $scope, '--output', 'none')
     if ($condition) { $azArgs += @('--condition', $condition, '--condition-version', '2.0') }
     az @azArgs

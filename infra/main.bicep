@@ -15,6 +15,9 @@ param namePrefix string = 'notepal'
 @description('Region for all resources.')
 param location string = resourceGroup().location
 
+@description('Region for PostgreSQL. This subscription is restricted from creating flexible servers in eastus, eastus2 and westus2.')
+param postgresLocation string = 'centralus'
+
 @description('Entra ID tenant that signs users in.')
 param tenantId string = tenant().tenantId
 
@@ -38,7 +41,7 @@ param apiImage string = ''
 param webImage string = ''
 
 @description('Existing (shared) Foundry account that hosts the OCR model deployment.')
-param foundryAccountName string = 'aif-acc-common'
+param foundryAccountName string = 'aif-common-acc'
 
 @description('Resource group of the Foundry account.')
 param foundryResourceGroup string = 'rg-common'
@@ -98,7 +101,7 @@ module acrPull 'modules/acr-pull.bicep' = {
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: 'psql-${namePrefix}-${suffix}'
-  location: location
+  location: postgresLocation
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'
