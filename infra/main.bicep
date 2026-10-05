@@ -4,6 +4,7 @@
 //  * Azure Container Registry, Basic
 //  * Azure AI Foundry (AIServices account + project + pay-per-token GlobalStandard model deployment) for the OCR agent
 //  * Log Analytics (PerGB, 30 day retention, daily cap)
+//  * Aspire dashboard (Container Apps .NET component) for live traces, metrics and logs
 targetScope = 'resourceGroup'
 
 @description('Prefix used to name all resources.')
@@ -47,6 +48,9 @@ param ocrModelVersion string = '2025-04-14'
 
 @description('Tokens-per-minute capacity (in thousands) of the OCR deployment. Pay-per-token, so this is only a rate limit.')
 param ocrModelCapacity int = 30
+
+@description('Deploy the Aspire dashboard in the Container Apps environment.')
+param enableAspireDashboard bool = true
 
 var suffix = uniqueString(resourceGroup().id)
 var deployApps = !empty(apiImage) && !empty(webImage)
@@ -217,6 +221,15 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
         sharedKey: logs.listKeys().primarySharedKey
       }
     }
+  }
+}
+
+// Container Apps injects OTEL_EXPORTER_OTLP_ENDPOINT into the apps, which ServiceDefaults uses. Opening it needs Contributor/Owner on the environment.
+resource aspireDashboard 'Microsoft.App/managedEnvironments/dotNetComponents@2025-10-02-preview' = if (enableAspireDashboard) {
+  parent: environment
+  name: 'aspire-dashboard'
+  properties: {
+    componentType: 'AspireDashboard'
   }
 }
 
