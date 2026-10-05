@@ -264,7 +264,7 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         Assert.Single((await alice.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.Pages);
     }
 
-    private static MultipartFormDataContent Files(params (string Name, byte[] Data)[] files)
+    internal static MultipartFormDataContent Files(params (string Name, byte[] Data)[] files)
     {
         var content = new MultipartFormDataContent();
         foreach (var (name, data) in files)
@@ -275,10 +275,10 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         return content;
     }
 
-    private static Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files) =>
+    internal static Task<NoteDto> UploadAsync(HttpClient client, string title, params (string Name, byte[] Data)[] files) =>
         UploadAsync(client, title, [], files);
 
-    private static async Task<NoteDto> UploadAsync(HttpClient client, string title, string[] tags, params (string Name, byte[] Data)[] files)
+    internal static async Task<NoteDto> UploadAsync(HttpClient client, string title, string[] tags, params (string Name, byte[] Data)[] files)
     {
         using var content = new MultipartFormDataContent { { new StringContent(title), "title" } };
         foreach (var tag in tags)
@@ -296,7 +296,7 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         return (await response.Content.ReadFromJsonAsync<NoteDto>())!;
     }
 
-    private static async Task<NoteDto> WaitForProcessingAsync(HttpClient client, Guid noteId)
+    internal static async Task<NoteDto> WaitForProcessingAsync(HttpClient client, Guid noteId)
     {
         for (var i = 0; i < 100; i++)
         {

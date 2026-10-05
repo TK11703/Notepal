@@ -50,13 +50,17 @@ public sealed class NotepalApiFactory : WebApplicationFactory<Program>, IAsyncLi
         });
     }
 
-    public HttpClient CreateClientFor(string? userId, string scopes = "access_as_user")
+    public HttpClient CreateClientFor(string? userId, string scopes = "access_as_user", string? email = null)
     {
         var client = CreateClient();
         if (userId is not null)
         {
             client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, userId);
             client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeader, scopes);
+            if (email is not null)
+            {
+                client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
+            }
         }
 
         return client;
@@ -70,6 +74,7 @@ public sealed class TestAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions>
     public const string SchemeName = "Test";
     public const string UserHeader = "X-Test-User";
     public const string ScopeHeader = "X-Test-Scopes";
+    public const string EmailHeader = "X-Test-Email";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -84,6 +89,10 @@ public sealed class TestAuthHandler(IOptionsMonitor<AuthenticationSchemeOptions>
             new("name", $"Test user {user}"),
             new("scp", Request.Headers[ScopeHeader].ToString()),
         };
+        if (Request.Headers.TryGetValue(EmailHeader, out var email))
+        {
+            claims.Add(new Claim("preferred_username", email.ToString()));
+        }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));

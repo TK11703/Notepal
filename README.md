@@ -22,8 +22,15 @@ side by side, and search everything you have captured. Every user only ever sees
   with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
+- **Sharing**: the **Share** button on a note opens a dialog where the owner searches people in the Azure tenant
+  (Microsoft Graph, delegated `User.ReadBasic.All`) or types any email address, then gives each person **Reader**
+  (view and download originals) or **Contributor** (also rename, tag, add pages, correct text, re-run extraction) access.
+  Only the owner can change sharing or delete the note. **Shared notes** in the left
+  navigation lists notes *shared with me* and notes *shared by me*; on *Shared with me* you can tick one or more notes
+  (or **Select all**) and **Leave** them to remove your access.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
   scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
+  A note is visible to anyone else only when its owner shares it with them (matched by `oid` or sign-in email).
 - **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
 - **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
@@ -65,15 +72,22 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 | `GET /api/notes/{id}/pages/{pageId}/original` | Original file |
 | `PUT /api/notes/{id}/pages/{pageId}/text` | Save corrected text (sending the AI text back clears the correction) |
 | `POST /api/notes/{id}/pages/{pageId}/reprocess` | Re-run text extraction |
+| `GET /api/notes/{id}/shares` | People the note is shared with (owner only) |
+| `POST /api/notes/{id}/shares` | Share with a person: `{ "email": "bob@contoso.com", "displayName": "Bob", "userId": null, "permission": 0 }` (`0` Reader, `1` Contributor; re-adding updates the permission) |
+| `PUT /api/notes/{id}/shares/{shareId}` | Change a person's permission (owner only) |
+| `DELETE /api/notes/{id}/shares/{shareId}` | Stop sharing (owner), or leave a note shared with you (recipient) |
+| `GET /api/shared/with-me?page=&pageSize=` | Notes other people shared with the caller, with role and sharer |
+| `POST /api/shared/with-me/leave` | Leave notes shared with the caller: `{ "noteIds": ["…"] }` (up to 100); removes only the caller's own shares and returns `{ "left": n }` |
+| `GET /api/shared/by-me?page=&pageSize=` | The caller's notes that are shared, with their recipients |
 | `GET /api/search?q=&tag=&page=&pageSize=` | Full-text search, optionally limited to notes with the given tag(s); matches in `snippet` are wrapped in `⟦ ⟧`. With only `tag`, returns one result per tagged note |
 
 ## Run locally
 
-Prerequisites: .NET 10 SDK, Docker, Azure CLI.
+Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+ (`pwsh`, for the Entra setup script; on Windows run it from `pwsh`, elsewhere run it directly or with `pwsh ./infra/scripts/setup-entra.ps1 …`).
 
 1. Start PostgreSQL: `docker compose up -d`
-2. Create the app registrations (once): `./infra/scripts/setup-entra.sh register` and note the printed ids.
-3. Create a client secret for local development: `./infra/scripts/setup-entra.sh dev-secret`
+2. Create the app registrations (once): `./infra/scripts/setup-entra.ps1 register` and note the printed ids.
+3. Create a client secret for local development: `./infra/scripts/setup-entra.ps1 dev-secret`
 4. Configure user secrets:
    ```bash
    cd src/Notepal.Api
@@ -113,7 +127,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 
 ### First-time setup
 
-1. `./infra/scripts/setup-entra.sh register` – note the API/Web client ids.
+1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
 2. Create an Entra app/service principal for GitHub Actions with a federated credential for this repository and grant it
    **Contributor** and **Role Based Access Control Administrator** (the template creates role assignments) on the
    subscription or target resource group.
@@ -124,7 +138,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 4. Run the **Deploy to Azure** workflow. It deploys the infrastructure, builds both images in ACR and deploys the
    container apps.
 5. Once, after the first deployment, run the command printed in the workflow summary:
-   `./infra/scripts/setup-entra.sh finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
+   `./infra/scripts/setup-entra.ps1 finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
    and trusts the web app's managed identity.
 
 ### Operational notes
@@ -135,3 +149,9 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 - Background OCR runs inside the API container; unfinished pages are re-queued automatically when it starts again.
 - Legacy binary Word files (`.doc`) are not supported – save them as `.docx` or PDF. Scanned PDFs are OCR'd from the
   largest image embedded on each page.
+- People search in the **Share** dialog uses Microsoft Graph with the delegated `User.ReadBasic.All` permission.
+  `setup-entra.ps1 register` adds and grants it; for an existing registration, re-run `register` (or grant admin
+  consent for `User.ReadBasic.All` on the web app in the Entra portal). Without consent the dialog still lets you share
+  by typing an email address.
+- Shares are matched to recipients by Entra object id when picked from the directory, otherwise by the sign-in email
+  (`preferred_username`), so a person shared by email sees the note as soon as they sign in.

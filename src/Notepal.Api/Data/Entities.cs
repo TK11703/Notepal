@@ -20,6 +20,34 @@ public sealed class Note
     public List<string> Tags { get; set; } = [];
 
     public List<Page> Pages { get; set; } = [];
+
+    public List<NoteShare> Shares { get; set; } = [];
+}
+
+/// <summary>Grants another person access to a note. Only the note's owner can create, change or remove shares.</summary>
+public sealed class NoteShare
+{
+    public Guid Id { get; set; }
+    public Guid NoteId { get; set; }
+    public Note Note { get; set; } = null!;
+
+    /// <summary>Denormalised owner id of the note (the person who shared it).</summary>
+    public required string OwnerId { get; set; }
+
+    /// <summary>Owner's name and e-mail when the note was shared, shown to the recipient.</summary>
+    public string? OwnerName { get; set; }
+    public string? OwnerEmail { get; set; }
+
+    /// <summary>Recipient's Entra object id when they were picked from the directory; otherwise <c>null</c>.</summary>
+    public string? RecipientId { get; set; }
+
+    /// <summary>Normalised (lower case) e-mail address of the recipient. Shares without an id are matched on it.</summary>
+    public required string RecipientEmail { get; set; }
+
+    public string? RecipientName { get; set; }
+
+    public SharePermission Permission { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>A captured artifact (photo, uploaded image, PDF or Word document) belonging to a note.</summary>
