@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Identity.Web;
-using Npgsql;
 using Notepal.Api.Auth;
 using Notepal.Api.Data;
 using Notepal.Api.Endpoints;
@@ -12,10 +12,11 @@ using Notepal.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();
+
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddValidation();
-builder.Services.AddHealthChecks();
 
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = UploadLimits.MaxRequestBytes);
 builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = UploadLimits.MaxRequestBytes);
@@ -42,9 +43,8 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
-builder.Services.AddSingleton(sp => NpgsqlDataSource.Create(
-    sp.GetRequiredService<IConfiguration>().GetConnectionString("Notepal")
-    ?? throw new InvalidOperationException("ConnectionStrings:Notepal is not configured.")));
+// Registers NpgsqlDataSource from ConnectionStrings:notepal (injected by the Aspire AppHost locally) with health checks and tracing.
+builder.AddNpgsqlDataSource("notepal");
 DapperConfiguration.Apply();
 builder.Services.AddSingleton<DatabaseMigrator>();
 builder.Services.AddSingleton<NotesRepository>();
@@ -83,7 +83,9 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecks("/healthz").AllowAnonymous();
+// Liveness only: a database outage must not make Container Apps restart the replica.
+app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = r => r.Tags.Contains("live") }).AllowAnonymous();
+app.MapDefaultEndpoints();
 
 app.MapGroup("/api")
     .RequireAuthorization("NotesUser")

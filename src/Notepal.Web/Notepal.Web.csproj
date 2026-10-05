@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Notepal.Shared\Notepal.Shared.csproj" />
+    <ProjectReference Include="..\Notepal.ServiceDefaults\Notepal.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

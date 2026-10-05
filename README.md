@@ -38,6 +38,8 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
 | --- | --- |
 | `src/Notepal.Web` | Blazor Web App: sign-in, upload/camera, viewer/editor, search, theme. Proxies original files from the API. |
 | `src/Notepal.Api` | Minimal API with built-in validation, plain SQL data access (Npgsql) + embedded SQL migrations (`Data/Migrations/*.sql`), upload validation (extension **and** file signature), background text extraction, search. |
+| `src/Notepal.AppHost` | Aspire AppHost: runs PostgreSQL (container + data volume), the API and the web app together with the Aspire dashboard. |
+| `src/Notepal.ServiceDefaults` | Shared Aspire defaults: OpenTelemetry, health checks, service discovery. |
 | `src/Notepal.Shared` | DTOs (with validation attributes) and limits shared by both apps. |
 | `tests/Notepal.Api.Tests` | Integration tests (WebApplicationFactory + Testcontainers PostgreSQL) incl. cross-user isolation. |
 | `infra/` | Bicep for Azure and the Entra ID setup script. |
@@ -61,12 +63,11 @@ validation problem details body.
 
 ## Run locally
 
-Prerequisites: .NET 10 SDK, Docker, Azure CLI.
+Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https://aspire.dev) (optional).
 
-1. Start PostgreSQL: `docker compose up -d`
-2. Create the app registrations (once): `./infra/scripts/setup-entra.sh register` and note the printed ids.
-3. Create a client secret for local development: `./infra/scripts/setup-entra.sh dev-secret`
-4. Configure user secrets:
+1. Create the app registrations (once): `./infra/scripts/setup-entra.ps1 register` and note the printed ids.
+2. Create a client secret for local development: `./infra/scripts/setup-entra.ps1 dev-secret`
+3. Configure user secrets:
    ```bash
    cd src/Notepal.Api
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
@@ -77,11 +78,15 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI.
    cd ../Notepal.Web
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
    dotnet user-secrets set "AzureAd:ClientId" "<web-client-id>"
-   dotnet user-secrets set "AzureAd:ClientSecret" "<secret from step 3>"
+   dotnet user-secrets set "AzureAd:ClientSecret" "<secret from step 2>"
    dotnet user-secrets set "NotepalApi:Scopes:0" "api://<api-client-id>/access_as_user"
    ```
-5. Run both apps (`dotnet run --launch-profile https` in `src/Notepal.Api` and `src/Notepal.Web`) and open
-   <https://localhost:7137>. The API applies pending SQL migrations on start-up.
+4. Start everything with Aspire: `aspire run` (or `dotnet run --project src/Notepal.AppHost`). The AppHost starts
+   PostgreSQL, waits for it, then the API (which applies pending SQL migrations) and the web app. Open the dashboard
+   link it prints for logs, traces and metrics, and the app at <https://localhost:7137>.
+
+   Without Aspire: `docker compose up -d`, then `dotnet run --launch-profile https` in `src/Notepal.Api` and
+   `src/Notepal.Web`.
 
 Without `Ocr:ProjectEndpoint` everything works except image OCR: such pages are marked *Failed* with an explanation
 and you can type the notes yourself.
@@ -105,7 +110,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 
 ### First-time setup
 
-1. `./infra/scripts/setup-entra.sh register` – note the API/Web client ids.
+1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
 2. Create an Entra app/service principal for GitHub Actions with a federated credential for this repository and grant it
    **Contributor** and **Role Based Access Control Administrator** (the template creates role assignments) on the
    subscription or target resource group.
@@ -116,7 +121,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 4. Run the **Deploy to Azure** workflow. It deploys the infrastructure, builds both images in ACR and deploys the
    container apps.
 5. Once, after the first deployment, run the command printed in the workflow summary:
-   `./infra/scripts/setup-entra.sh finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
+   `./infra/scripts/setup-entra.ps1 finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
    and trusts the web app's managed identity.
 
 ### Operational notes

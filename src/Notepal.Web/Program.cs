@@ -9,6 +9,8 @@ using Notepal.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();
+
 var apiScopes = builder.Configuration.GetSection($"{NotepalApiClient.ServiceName}:Scopes").Get<string[]>() ?? [];
 
 // Sign users in with Entra ID and acquire tokens to call Notepal.Api on their behalf.
@@ -35,7 +37,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddHealthChecks();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -61,6 +62,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapHealthChecks("/healthz").AllowAnonymous();
+app.MapDefaultEndpoints();
 
 var auth = app.MapGroup("/authentication");
 auth.MapGet("/login", (string? returnUrl) =>
