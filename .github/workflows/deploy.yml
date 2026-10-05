@@ -1,34 +1,103 @@
 name: Deploy to Azure
 
-# Required repository configuration (Settings > Secrets and variables > Actions):
-#   secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  (federated credential for this repo)
-#              POSTGRES_ADMIN_PASSWORD
-#   variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
-#              (optional) AZURE_FOUNDRY_LOCATION
+# Runs after CI succeeds on main (or manually). The preview job shows an infrastructure what-if; the deploy job uses the
+# 'production' environment, so it waits for a required reviewer to approve before anything in Azure changes.
+#
+# Required configuration (Settings > Secrets and variables > Actions, and Settings > Environments):
+#   environment: production, with required reviewers
+#   secrets:     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, POSTGRES_ADMIN_PASSWORD
+#   variables:   AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
+#                (optional) AZURE_FOUNDRY_LOCATION, AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP
+#   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>/<repo>:ref:refs/heads/main' (preview)
+#                and 'repo:<owner>/<repo>:environment:production' (deploy)
 
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
+# Runs waiting for approval are replaced by newer ones; a running deployment is never cancelled.
 concurrency:
   group: deploy
   cancel-in-progress: false
 
+env:
+  RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+  LOCATION: ${{ vars.AZURE_LOCATION }}
+  FOUNDRY_LOCATION: ${{ vars.AZURE_FOUNDRY_LOCATION || vars.AZURE_LOCATION }}
+  API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
+  WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
+  REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acracccommon' }}
+  REGISTRY_RG: ${{ vars.AZURE_REGISTRY_RESOURCE_GROUP || 'rg-common' }}
+  TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+
 jobs:
-  deploy:
+  preview:
+    # Only green CI runs for pushes to this repository's main branch (never pull requests, including from forks).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    env:
-      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
-      LOCATION: ${{ vars.AZURE_LOCATION }}
-      FOUNDRY_LOCATION: ${{ vars.AZURE_FOUNDRY_LOCATION || vars.AZURE_LOCATION }}
-      TAG: ${{ github.sha }}
-      API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
-      WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-if
+        env:
+          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          echo "### Deployment preview for \`${TAG:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$(az group exists --name "$RG")" != "true" ]; then
+            echo "Resource group \`$RG\` doesn't exist yet: everything will be created." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          params=(apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID"
+                  foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET"
+                  registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG")
+          login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)
+          params+=(apiImage="$login_server/notepal-api:$TAG" webImage="$login_server/notepal-web:$TAG")
+
+          status=0
+          az deployment group what-if \
+            --resource-group "$RG" \
+            --template-file infra/main.bicep \
+            --parameters "${params[@]}" \
+            --exclude-change-types NoChange Ignore > what-if.txt 2>&1 || status=$?
+          cat what-if.txt
+          {
+            echo '```'
+            cat what-if.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+  deploy:
+    needs: preview
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.apps.outputs.webUrl }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
 
       - uses: azure/login@v2
         with:
@@ -50,16 +119,17 @@ jobs:
             --template-file infra/main.bicep \
             --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
                          foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+                         registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
             --query properties.outputs.registryName.value --output tsv)
           echo "registry=$registry" >> "$GITHUB_OUTPUT"
-          echo "loginServer=$(az acr show --name "$registry" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
+          echo "loginServer=$(az acr show --name "$registry" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
 
       - name: Build images in ACR
         env:
           REGISTRY: ${{ steps.infra.outputs.registry }}
         run: |
-          az acr build --registry "$REGISTRY" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
-          az acr build --registry "$REGISTRY" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
+          az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
+          az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
 
       - name: Deploy container apps
         id: apps
@@ -73,11 +143,13 @@ jobs:
             --template-file infra/main.bicep \
             --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
                          foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+                         registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
                          apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
                          webImage="$LOGIN_SERVER/notepal-web:$TAG" \
             --query properties.outputs --output json)
           web_url=$(echo "$outputs" | jq -r .webUrl.value)
           principal=$(echo "$outputs" | jq -r .webIdentityPrincipalId.value)
+          echo "webUrl=$web_url" >> "$GITHUB_OUTPUT"
           {
             echo "### Notepal deployed"
             echo "Web app: $web_url"

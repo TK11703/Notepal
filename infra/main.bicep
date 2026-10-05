@@ -1,7 +1,7 @@
 // Notepal – lowest-cost Azure footprint:
 //  * Azure Container Apps (Consumption, scale to zero) for the Blazor web app and the API
 //  * Azure Database for PostgreSQL Flexible Server, Burstable B1ms, 32 GB
-//  * Azure Container Registry, Basic
+//  * Azure Container Registry: an existing shared registry (not created here)
 //  * Azure AI Foundry (AIServices account + project + pay-per-token GlobalStandard model deployment) for the OCR agent
 //  * Log Analytics (PerGB, 30 day retention, daily cap)
 //  * Aspire dashboard (Container Apps .NET component) for live traces, metrics and logs
@@ -52,13 +52,18 @@ param ocrModelCapacity int = 30
 @description('Deploy the Aspire dashboard in the Container Apps environment.')
 param enableAspireDashboard bool = true
 
+@description('Existing (shared) container registry that the images are built in and pulled from.')
+param registryName string = 'acracccommon'
+
+@description('Resource group of the shared container registry.')
+param registryResourceGroup string = 'rg-common'
+
 var suffix = uniqueString(resourceGroup().id)
 var deployApps = !empty(apiImage) && !empty(webImage)
 var databaseName = 'notepal'
 var foundryProjectName = '${namePrefix}-project'
 
 // Built-in role definition ids.
-var acrPullRole = '7f951dda-4ed3-4ba8-8aa3-0b5a6f6e5ba5'
 var azureAiUserRole = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 
 resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -81,32 +86,20 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: take('acr${replace(namePrefix, '-', '')}${suffix}', 50)
-  location: location
-  sku: { name: 'Basic' }
-  properties: {
-    adminUserEnabled: false
-  }
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: registryName
+  scope: resourceGroup(registryResourceGroup)
 }
 
-resource apiAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, apiIdentity.id, acrPullRole)
-  scope: registry
-  properties: {
-    principalId: apiIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRole)
-  }
-}
-
-resource webAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, webIdentity.id, acrPullRole)
-  scope: registry
-  properties: {
-    principalId: webIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', acrPullRole)
+module acrPull 'modules/acr-pull.bicep' = {
+  name: 'acr-pull-${namePrefix}'
+  scope: resourceGroup(registryResourceGroup)
+  params: {
+    registryName: registryName
+    principals: [
+      { identityId: apiIdentity.id, principalId: apiIdentity.properties.principalId }
+      { identityId: webIdentity.id, principalId: webIdentity.properties.principalId }
+    ]
   }
 }
 
@@ -307,7 +300,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
     }
   }
   dependsOn: [
-    apiAcrPull
+    acrPull
     apiAiUser
   ]
 }
@@ -379,7 +372,7 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
     }
   }
   dependsOn: [
-    webAcrPull
+    acrPull
   ]
 }
 
