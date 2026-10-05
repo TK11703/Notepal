@@ -7,7 +7,7 @@ name: Deploy to Azure
 #   environment: production, with required reviewers
 #   secrets:     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, POSTGRES_ADMIN_PASSWORD
 #   variables:   AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
-#                (optional) AZURE_FOUNDRY_LOCATION, AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP
+#                (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
 #   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>/<repo>:ref:refs/heads/main' (preview)
 #                and 'repo:<owner>/<repo>:environment:production' (deploy)
 
@@ -30,7 +30,6 @@ concurrency:
 env:
   RG: ${{ vars.AZURE_RESOURCE_GROUP }}
   LOCATION: ${{ vars.AZURE_LOCATION }}
-  FOUNDRY_LOCATION: ${{ vars.AZURE_FOUNDRY_LOCATION || vars.AZURE_LOCATION }}
   API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
   WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
   REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acracccommon' }}
@@ -69,7 +68,7 @@ jobs:
           fi
 
           params=(apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID"
-                  foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET"
+                  postgresAdminPassword="$PG_ADMIN_SECRET"
                   registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG")
           login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)
           params+=(apiImage="$login_server/notepal-api:$TAG" webImage="$login_server/notepal-web:$TAG")
@@ -118,7 +117,7 @@ jobs:
             --name notepal-infra \
             --template-file infra/main.bicep \
             --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
-                         foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+                         postgresAdminPassword="$PG_ADMIN_SECRET" \
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
             --query properties.outputs.registryName.value --output tsv)
           echo "registry=$registry" >> "$GITHUB_OUTPUT"
@@ -142,7 +141,7 @@ jobs:
             --name notepal-apps \
             --template-file infra/main.bicep \
             --parameters apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
-                         foundryLocation="$FOUNDRY_LOCATION" postgresAdminPassword="$PG_ADMIN_SECRET" \
+                         postgresAdminPassword="$PG_ADMIN_SECRET" \
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
                          apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
                          webImage="$LOGIN_SERVER/notepal-web:$TAG" \

@@ -2,7 +2,7 @@
 //  * Azure Container Apps (Consumption, scale to zero) for the Blazor web app and the API
 //  * Azure Database for PostgreSQL Flexible Server, Burstable B1ms, 32 GB
 //  * Azure Container Registry: an existing shared registry (not created here)
-//  * Azure AI Foundry (AIServices account + project + pay-per-token GlobalStandard model deployment) for the OCR agent
+//  * Azure AI Foundry: an existing shared project and model deployment for the OCR agent (not created here)
 //  * Log Analytics (PerGB, 30 day retention, daily cap)
 //  * Aspire dashboard (Container Apps .NET component) for live traces, metrics and logs
 targetScope = 'resourceGroup'
@@ -12,11 +12,8 @@ targetScope = 'resourceGroup'
 @maxLength(12)
 param namePrefix string = 'notepal'
 
-@description('Region for all resources except Foundry.')
+@description('Region for all resources.')
 param location string = resourceGroup().location
-
-@description('Region for the Foundry account. Must offer the chosen model as GlobalStandard.')
-param foundryLocation string = location
 
 @description('Entra ID tenant that signs users in.')
 param tenantId string = tenant().tenantId
@@ -40,14 +37,17 @@ param apiImage string = ''
 @description('Full image reference for the web app. Leave empty to deploy only the shared infrastructure.')
 param webImage string = ''
 
-@description('Model used by the OCR agent. Must support image input.')
-param ocrModelName string = 'gpt-4.1-mini'
+@description('Existing (shared) Foundry account that hosts the OCR project.')
+param foundryAccountName string = 'aif-acc-common'
 
-@description('Model version for the OCR deployment.')
-param ocrModelVersion string = '2025-04-14'
+@description('Resource group of the Foundry account.')
+param foundryResourceGroup string = 'rg-common'
 
-@description('Tokens-per-minute capacity (in thousands) of the OCR deployment. Pay-per-token, so this is only a rate limit.')
-param ocrModelCapacity int = 30
+@description('Existing Foundry project the OCR agent is created in.')
+param foundryProjectName string = 'proj-default'
+
+@description('Existing model deployment used by the OCR agent. Must support image input.')
+param ocrModelDeploymentName string = 'gpt-4.1-mini'
 
 @description('Deploy the Aspire dashboard in the Container Apps environment.')
 param enableAspireDashboard bool = true
@@ -61,10 +61,6 @@ param registryResourceGroup string = 'rg-common'
 var suffix = uniqueString(resourceGroup().id)
 var deployApps = !empty(apiImage) && !empty(webImage)
 var databaseName = 'notepal'
-var foundryProjectName = '${namePrefix}-project'
-
-// Built-in role definition ids.
-var azureAiUserRole = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 
 resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-${namePrefix}-api'
@@ -148,58 +144,23 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   }
 }
 
-resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
-  name: 'ai-${namePrefix}-${suffix}'
-  location: foundryLocation
-  kind: 'AIServices'
-  sku: { name: 'S0' }
-  identity: { type: 'SystemAssigned' }
-  properties: {
-    customSubDomainName: 'ai-${namePrefix}-${suffix}'
-    allowProjectManagement: true
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: true
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
+  name: foundryAccountName
+  scope: resourceGroup(foundryResourceGroup)
+
+  resource ocrDeployment 'deployments' existing = {
+    name: ocrModelDeploymentName
   }
 }
 
-resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
-  parent: foundry
-  name: foundryProjectName
-  location: foundryLocation
-  identity: { type: 'SystemAssigned' }
-  properties: {
-    displayName: 'Notepal'
-    description: 'OCR agent for Notepal'
-  }
-}
-
-resource ocrDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
-  parent: foundry
-  name: ocrModelName
-  sku: {
-    name: 'GlobalStandard'
-    capacity: ocrModelCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: ocrModelName
-      version: ocrModelVersion
-    }
-  }
-  // Operations on the same account must not run concurrently.
-  dependsOn: [
-    foundryProject
-  ]
-}
-
-resource apiAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(foundry.id, apiIdentity.id, azureAiUserRole)
-  scope: foundry
-  properties: {
+module apiFoundryUser 'modules/foundry-user.bicep' = {
+  name: 'foundry-user-${namePrefix}-api'
+  scope: resourceGroup(foundryResourceGroup)
+  params: {
+    accountName: foundryAccountName
+    projectName: foundryProjectName
+    identityId: apiIdentity.id
     principalId: apiIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAiUserRole)
   }
 }
 
@@ -274,7 +235,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'AzureAd__TenantId', value: tenantId }
             { name: 'AzureAd__ClientId', value: apiClientId }
             { name: 'Ocr__ProjectEndpoint', value: foundryProjectEndpoint }
-            { name: 'Ocr__ModelDeploymentName', value: ocrDeployment.name }
+            { name: 'Ocr__ModelDeploymentName', value: foundry::ocrDeployment.name }
             { name: 'Ocr__ManagedIdentityClientId', value: apiIdentity.properties.clientId }
           ]
           probes: [
@@ -301,7 +262,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   }
   dependsOn: [
     acrPull
-    apiAiUser
+    apiFoundryUser
   ]
 }
 
@@ -379,6 +340,8 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
 output registryName string = registry.name
 output registryLoginServer string = registry.properties.loginServer
 output foundryProjectEndpoint string = foundryProjectEndpoint
+// Reading the model deployment fails the deployment if it doesn't exist.
+output ocrModel string = '${foundry::ocrDeployment.properties.model.name} (${foundry::ocrDeployment.properties.model.version})'
 output postgresServer string = postgres.properties.fullyQualifiedDomainName
 output webIdentityPrincipalId string = webIdentity.properties.principalId
 output webUrl string = deployApps ? 'https://${web!.properties.configuration.ingress.fqdn}' : ''

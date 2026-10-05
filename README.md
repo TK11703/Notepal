@@ -97,8 +97,8 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https
    cd src/Notepal.Api
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
    dotnet user-secrets set "AzureAd:ClientId" "<api-client-id>"
-   # optional – enables OCR (needs `az login` and the "Azure AI User" role on the Foundry project)
-   dotnet user-secrets set "Ocr:ProjectEndpoint" "https://<account>.services.ai.azure.com/api/projects/<project>"
+   # optional – enables OCR (needs `az login` and the "Foundry User" role on the Foundry project)
+   dotnet user-secrets set "Ocr:ProjectEndpoint" "https://aif-acc-common.services.ai.azure.com/api/projects/proj-default"
 
    cd ../Notepal.Web
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
@@ -127,11 +127,11 @@ The Bicep template (`infra/main.bicep`) uses the cheapest options that fit the w
 | Container Apps environment | Consumption | Both apps: 0.25 vCPU / 0.5 GiB, **scale to zero** (min 0, max 1 replica). The API uses internal ingress only. |
 | PostgreSQL Flexible Server | Burstable **B1ms**, 32 GB, no HA, 7-day LRS backups | Public access limited to Azure services, TLS required. |
 | Container Registry | Shared, existing (`acracccommon` in `rg-common`) | Not created by the template. Images (`notepal-api`, `notepal-web`) are pulled with managed identities (`AcrPull`, no admin user). |
-| Azure AI Foundry | AIServices S0 + project, `gpt-4.1-mini` **GlobalStandard** | Pay per token; the OCR agent is created automatically on first use. Key auth disabled. |
+| Azure AI Foundry | Shared, existing (`aif-acc-common` / project `proj-default` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; the OCR agent is created in the project on first use. |
 | Log Analytics | PerGB2018, 30 days, 1 GB/day cap | |
 
 The web app authenticates to Entra ID with its managed identity (federated credential) – no client secrets are stored
-in Azure. The API reaches Foundry with its own managed identity (`Azure AI User` role).
+in Azure. The API reaches the Foundry project with its own managed identity (`Foundry User`, formerly `Azure AI User`).
 
 ### First-time setup
 
@@ -148,8 +148,9 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
    - Settings → Secrets and variables → Actions:
      - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `POSTGRES_ADMIN_PASSWORD`
      - Variables: `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
-       optionally `AZURE_FOUNDRY_LOCATION` (a region offering the model as GlobalStandard) and
-       `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`).
+       optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`).
+       The Foundry account, project and model deployment are parameters of `infra/main.bicep`
+       (`foundryAccountName`, `foundryResourceGroup`, `foundryProjectName`, `ocrModelDeploymentName`).
 4. Push to `main`. When **CI** passes, **Deploy to Azure** starts: the *preview* job posts an infrastructure what-if in
    the run summary, then the *deploy* job waits for an approver. Once approved it deploys the infrastructure, builds both
    images in ACR and deploys the container apps. You can also start it manually from the Actions tab (approval is still
