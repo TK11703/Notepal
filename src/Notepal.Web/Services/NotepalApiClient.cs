@@ -77,6 +77,14 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     public Task<PageDto> ReprocessPageAsync(Guid noteId, Guid pageId, CancellationToken ct = default) =>
         SendAsync<PageDto>(HttpMethod.Post, $"api/notes/{noteId}/pages/{pageId}/reprocess", null, ct);
 
+    /// <summary>Deletes a page; the remaining pages are renumbered.</summary>
+    public Task<NoteDto> DeletePageAsync(Guid noteId, Guid pageId, CancellationToken ct = default) =>
+        SendAsync<NoteDto>(HttpMethod.Delete, $"api/notes/{noteId}/pages/{pageId}", null, ct);
+
+    /// <summary>Moves a page to another (1-based) position.</summary>
+    public Task<NoteDto> MovePageAsync(Guid noteId, Guid pageId, int pageNumber, CancellationToken ct = default) =>
+        SendAsync<NoteDto>(HttpMethod.Put, $"api/notes/{noteId}/pages/{pageId}/position", JsonContent.Create(new MovePageRequest(pageNumber)), ct);
+
     /// <summary>People the note is shared with (owner only).</summary>
     public Task<List<NoteShareDto>> GetSharesAsync(Guid noteId, CancellationToken ct = default) =>
         SendAsync<List<NoteShareDto>>(HttpMethod.Get, $"api/notes/{noteId}/shares", null, ct);

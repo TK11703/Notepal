@@ -43,6 +43,8 @@ public sealed class SharingApiTests(NotepalApiFactory factory) : IClassFixture<N
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/text", new UpdatePageTextRequest("hacked"))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.PostAsync($"/api/notes/{note.Id}/pages/{pageId}/reprocess", null)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.PostAsync($"/api/notes/{note.Id}/pages", Files(("b.png", TestFiles.Png)))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/position", new MovePageRequest(1))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.DeleteAsync($"/api/notes/{note.Id}/pages/{pageId}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.DeleteAsync($"/api/notes/{note.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await bob.Client.GetAsync($"/api/notes/{note.Id}/shares")).StatusCode);
 
@@ -70,6 +72,10 @@ public sealed class SharingApiTests(NotepalApiFactory factory) : IClassFixture<N
         (await carol.Client.PutAsJsonAsync($"/api/notes/{note.Id}/tags", new UpdateNoteTagsRequest(["team"]))).EnsureSuccessStatusCode();
         (await carol.Client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/text", new UpdatePageTextRequest("Carol's correction"))).EnsureSuccessStatusCode();
         (await carol.Client.PostAsync($"/api/notes/{note.Id}/pages", Files(("b.png", TestFiles.Png)))).EnsureSuccessStatusCode();
+        (await carol.Client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/position", new MovePageRequest(2))).EnsureSuccessStatusCode();
+        (await carol.Client.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{pageId}/position", new MovePageRequest(1))).EnsureSuccessStatusCode();
+        Assert.Equal(1, (await alice.Client.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.ShareCount);
+        Assert.Equal(0, (await carol.Client.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.ShareCount);
 
         Assert.Equal(HttpStatusCode.Forbidden, (await carol.Client.DeleteAsync($"/api/notes/{note.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await carol.Client.PostAsJsonAsync($"/api/notes/{note.Id}/shares", new AddNoteShareRequest(dave.Email))).StatusCode);

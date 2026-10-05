@@ -27,6 +27,8 @@ public static class NotesEndpoints
         notes.MapGet("/{noteId:guid}/pages/{pageId:guid}/original", GetOriginal);
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/text", UpdatePageText);
         notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/reprocess", ReprocessPage);
+        notes.MapDelete("/{noteId:guid}/pages/{pageId:guid}", DeletePage);
+        notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/position", MovePage);
 
         return api;
     }
@@ -236,6 +238,35 @@ public static class NotesEndpoints
 
         queue.Enqueue(page!.Id);
         return Results.Accepted(value: page);
+    }
+
+    private static async Task<IResult> DeletePage(Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
+    {
+        var (access, denied) = await RequireEditableAsync(notes, noteId, user, ct);
+        if (access is null)
+        {
+            return denied;
+        }
+
+        var (outcome, note) = await notes.DeletePageAsync(noteId, pageId, user, access, ct);
+        return outcome switch
+        {
+            PageChangeOutcome.LastPage => Results.Conflict(new { message = "A note needs at least one page. Delete the note instead." }),
+            PageChangeOutcome.Changed => Results.Ok(note),
+            _ => Results.NotFound(),
+        };
+    }
+
+    private static async Task<IResult> MovePage(Guid noteId, Guid pageId, MovePageRequest body, NotesRepository notes, ICurrentUser user, CancellationToken ct)
+    {
+        var (access, denied) = await RequireEditableAsync(notes, noteId, user, ct);
+        if (access is null)
+        {
+            return denied;
+        }
+
+        var (outcome, note) = await notes.MovePageAsync(noteId, pageId, body.PageNumber, user, access, ct);
+        return outcome == PageChangeOutcome.Changed ? Results.Ok(note) : Results.NotFound();
     }
 
     /// <summary>All tags the caller has used, most used first, so the UI can suggest them.</summary>

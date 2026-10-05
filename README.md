@@ -24,7 +24,7 @@ side by side, and search everything you have captured. Every user only ever sees
   over corrected text and titles, plus substring matching, with highlighted snippets.
 - **Sharing**: the **Share** button on a note opens a dialog where the owner searches people in the Azure tenant
   (Microsoft Graph, delegated `User.ReadBasic.All`) or types any email address, then gives each person **Reader**
-  (view and download originals) or **Contributor** (also rename, tag, add pages, correct text, re-run extraction) access.
+  (view and download originals) or **Contributor** (also rename, tag, add, remove and reorder pages, correct text, re-run extraction) access.
   Only the owner can change sharing or delete the note. **Shared notes** in the left
   navigation lists notes *shared with me* and notes *shared by me*; on *Shared with me* you can tick one or more notes
   (or **Select all**) and **Leave** them to remove your access.
@@ -75,6 +75,8 @@ validation problem details body.
 | `GET /api/notes/{id}/pages/{pageId}/original` | Original file |
 | `PUT /api/notes/{id}/pages/{pageId}/text` | Save corrected text (sending the AI text back clears the correction) |
 | `POST /api/notes/{id}/pages/{pageId}/reprocess` | Re-run text extraction |
+| `PUT /api/notes/{id}/pages/{pageId}/position` | Move a page: `{ "pageNumber": 1 }`; the other pages are renumbered |
+| `DELETE /api/notes/{id}/pages/{pageId}` | Delete a page and its original (a note keeps at least one page) |
 | `GET /api/notes/{id}/shares` | People the note is shared with (owner only) |
 | `POST /api/notes/{id}/shares` | Share with a person: `{ "email": "bob@contoso.com", "displayName": "Bob", "userId": null, "permission": 0 }` (`0` Reader, `1` Contributor; re-adding updates the permission) |
 | `PUT /api/notes/{id}/shares/{shareId}` | Change a person's permission (owner only) |

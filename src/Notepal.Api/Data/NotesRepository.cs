@@ -29,6 +29,13 @@ public enum AddPagesOutcome
     Added,
 }
 
+public enum PageChangeOutcome
+{
+    NotFound,
+    LastPage,
+    Changed,
+}
+
 public sealed record AddPagesResult(AddPagesOutcome Outcome, NoteDto? Note = null, IReadOnlyList<Guid>? PageIds = null, int Remaining = 0);
 
 /// <summary>Columns and row type of a note in a list (<see cref="NoteSummaryDto"/>). The note table must be aliased <c>n</c>.</summary>
@@ -145,10 +152,14 @@ public sealed class NotesRepository(NpgsqlDataSource db)
               FROM pages p
               JOIN notes n ON n.id = p.note_id
              WHERE p.note_id = @NoteId AND {Visible};
+
+            SELECT count(*)::integer FROM note_shares s WHERE s.note_id = @NoteId AND s.owner_id = @UserId;
             """, new { NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
 
         var note = await results.ReadSingleOrDefaultAsync<Note>();
-        return note?.ToDto(await results.ReadAsync<Page>(), access);
+        var pages = await results.ReadAsync<Page>();
+        var shareCount = await results.ReadSingleAsync<int>();
+        return note?.ToDto(pages, access, shareCount);
     }
 
     public async Task<NoteDto> CreateNoteAsync(string ownerId, string title, IEnumerable<string> tags, IReadOnlyList<NewPage> files, CancellationToken ct)
@@ -226,6 +237,78 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         return note is null
             ? new AddPagesResult(AddPagesOutcome.NotFound)
             : new AddPagesResult(AddPagesOutcome.Added, note, pages.Select(p => p.Id).ToList());
+    }
+
+    /// <summary>Deletes a page and renumbers the remaining ones. The last page of a note can't be deleted.</summary>
+    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> DeletePageAsync(Guid noteId, Guid pageId, ICurrentUser user, NoteAccess access, CancellationToken ct) =>
+        ChangePageAsync(noteId, pageId, null, user, access, ct);
+
+    /// <summary>Moves a page to <paramref name="pageNumber"/> (clamped to the note's pages) and renumbers the others.</summary>
+    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> MovePageAsync(Guid noteId, Guid pageId, int pageNumber, ICurrentUser user, NoteAccess access, CancellationToken ct) =>
+        ChangePageAsync(noteId, pageId, pageNumber, user, access, ct);
+
+    /// <summary>Deletes (<paramref name="moveTo"/> is <c>null</c>) or moves a page, then numbers all pages 1..n.</summary>
+    private async Task<(PageChangeOutcome Outcome, NoteDto? Note)> ChangePageAsync(
+        Guid noteId, Guid pageId, int? moveTo, ICurrentUser user, NoteAccess access, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+
+        // Locking the note serializes page changes and uploads so page numbers stay consistent.
+        var locked = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
+            $"SELECT n.id FROM notes n WHERE n.id = @NoteId AND {Editable} FOR UPDATE",
+            new { NoteId = noteId, user.UserId, user.Email }, transaction, cancellationToken: ct));
+        if (locked is null)
+        {
+            return (PageChangeOutcome.NotFound, null);
+        }
+
+        var order = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT id FROM pages WHERE note_id = @NoteId ORDER BY page_number",
+            new { NoteId = noteId }, transaction, cancellationToken: ct))).AsList();
+        var index = order.IndexOf(pageId);
+        if (index < 0)
+        {
+            return (PageChangeOutcome.NotFound, null);
+        }
+
+        order.RemoveAt(index);
+        if (moveTo is null)
+        {
+            if (order.Count == 0)
+            {
+                return (PageChangeOutcome.LastPage, null);
+            }
+
+            await connection.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM pages WHERE id = @PageId AND note_id = @NoteId",
+                new { PageId = pageId, NoteId = noteId }, transaction, cancellationToken: ct));
+        }
+        else
+        {
+            var target = Math.Clamp(moveTo.Value, 1, order.Count + 1) - 1;
+            if (target == index)
+            {
+                return (PageChangeOutcome.Changed, await GetNoteAsync(noteId, user, access, ct));
+            }
+
+            order.Insert(target, pageId);
+        }
+
+        // Negate first: uq_pages_note_page_number is checked row by row, so numbers can't be swapped in one step.
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE pages SET page_number = -page_number WHERE note_id = @NoteId;
+
+            UPDATE pages p SET page_number = o.n::integer
+              FROM unnest(@Ids) WITH ORDINALITY AS o(id, n)
+             WHERE p.id = o.id AND p.note_id = @NoteId;
+
+            UPDATE notes SET updated_at = @Now WHERE id = @NoteId;
+            """, new { NoteId = noteId, Ids = order.ToArray(), Now = DateTimeOffset.UtcNow }, transaction, cancellationToken: ct));
+
+        await transaction.CommitAsync(ct);
+        var note = await GetNoteAsync(noteId, user, access, ct);
+        return note is null ? (PageChangeOutcome.NotFound, null) : (PageChangeOutcome.Changed, note);
     }
 
     public async Task<bool> DeleteNoteAsync(string ownerId, Guid noteId, CancellationToken ct)

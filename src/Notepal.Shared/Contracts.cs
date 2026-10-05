@@ -43,7 +43,8 @@ public sealed record NoteDto(
     IReadOnlyList<PageDto> Pages,
     IReadOnlyList<string> Tags,
     NoteRole Role = NoteRole.Owner,
-    string? SharedBy = null);
+    string? SharedBy = null,
+    int ShareCount = 0);
 
 public sealed record UpdateNoteRequest(
     [Required, MaxLength(NoteLimits.MaxTitleLength)] string Title);
@@ -52,6 +53,9 @@ public sealed record UpdatePageTextRequest(
     [Required(AllowEmptyStrings = true), MaxLength(NoteLimits.MaxTextLength)] string Text);
 
 public sealed record UpdateNoteTagsRequest(IReadOnlyList<string> Tags);
+
+/// <summary>Moves a page to <see cref="PageNumber"/> (1-based); the other pages shift to make room.</summary>
+public sealed record MovePageRequest([Range(1, UploadLimits.MaxFilesPerNote)] int PageNumber);
 
 /// <summary>A tag the user has used, with the number of their notes that carry it.</summary>
 public sealed record TagDto(string Name, int Count);
@@ -71,7 +75,7 @@ public enum NoteRole
     /// <summary>Created the note: full control, including sharing and deleting it.</summary>
     Owner = 0,
 
-    /// <summary>Shared with edit rights: can rename, tag, correct text and add pages, but not delete or share.</summary>
+    /// <summary>Shared with edit rights: can rename, tag, correct text and add, remove and reorder pages, but not delete or share.</summary>
     Contributor = 1,
 
     /// <summary>Shared read-only.</summary>

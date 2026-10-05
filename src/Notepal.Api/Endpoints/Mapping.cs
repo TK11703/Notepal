@@ -18,7 +18,7 @@ internal static class Mapping
         page.Error,
         page.UpdatedAt);
 
-    public static NoteDto ToDto(this Note note, IEnumerable<Page> pages, NoteAccess? access = null)
+    public static NoteDto ToDto(this Note note, IEnumerable<Page> pages, NoteAccess? access = null, int shareCount = 0)
     {
         var ordered = pages.OrderBy(p => p.PageNumber).ToList();
         return new(
@@ -30,7 +30,8 @@ internal static class Mapping
             ordered.Select(p => p.ToDto()).ToList(),
             note.Tags,
             access?.Role ?? NoteRole.Owner,
-            access?.SharedBy);
+            access?.SharedBy,
+            shareCount);
     }
 
     public static NoteShareDto ToDto(this NoteShare share) => new(

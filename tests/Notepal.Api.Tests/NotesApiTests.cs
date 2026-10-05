@@ -253,6 +253,40 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
     }
 
     [Fact]
+    public async Task Pages_can_be_moved_and_deleted()
+    {
+        var alice = factory.CreateClientFor(NewUser());
+        var bob = factory.CreateClientFor(NewUser());
+        var note = await UploadAsync(alice, "Ordered", ("p1.png", TestFiles.Png), ("p2.png", TestFiles.Png), ("p3.png", TestFiles.Png));
+        var ids = note.Pages.Select(p => p.Id).ToArray();
+
+        var moved = await alice.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{ids[2]}/position", new MovePageRequest(1));
+        moved.EnsureSuccessStatusCode();
+        var afterMove = (await moved.Content.ReadFromJsonAsync<NoteDto>())!;
+        Assert.Equal([ids[2], ids[0], ids[1]], afterMove.Pages.Select(p => p.Id));
+        Assert.Equal([1, 2, 3], afterMove.Pages.Select(p => p.PageNumber));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await alice.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{ids[0]}/position", new MovePageRequest(0))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PutAsJsonAsync($"/api/notes/{note.Id}/pages/{ids[0]}/position", new MovePageRequest(2))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.DeleteAsync($"/api/notes/{note.Id}/pages/{ids[0]}")).StatusCode);
+
+        var deleted = await alice.DeleteAsync($"/api/notes/{note.Id}/pages/{ids[0]}");
+        deleted.EnsureSuccessStatusCode();
+        var afterDelete = (await deleted.Content.ReadFromJsonAsync<NoteDto>())!;
+        Assert.Equal([ids[2], ids[1]], afterDelete.Pages.Select(p => p.Id));
+        Assert.Equal([1, 2], afterDelete.Pages.Select(p => p.PageNumber));
+        Assert.Equal(HttpStatusCode.NotFound, (await alice.GetAsync($"/api/notes/{note.Id}/pages/{ids[0]}/original")).StatusCode);
+
+        (await alice.DeleteAsync($"/api/notes/{note.Id}/pages/{ids[2]}")).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.Conflict, (await alice.DeleteAsync($"/api/notes/{note.Id}/pages/{ids[1]}")).StatusCode);
+
+        // New pages are numbered after the renumbered ones.
+        var added = await alice.PostAsync($"/api/notes/{note.Id}/pages", Files(("p4.png", TestFiles.Png)));
+        added.EnsureSuccessStatusCode();
+        Assert.Equal([1, 2], (await added.Content.ReadFromJsonAsync<NoteDto>())!.Pages.Select(p => p.PageNumber));
+    }
+
+    [Fact]
     public async Task Pages_cannot_be_added_to_someone_elses_note()
     {
         var alice = factory.CreateClientFor(NewUser());

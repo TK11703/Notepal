@@ -89,8 +89,12 @@ else
         <div class="d-flex flex-wrap gap-2">
             @if (IsOwner)
             {
-                <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" type="button" title="Share this note with people in your organization" @onclick="() => sharing = true">
+                <button class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" type="button" title="@ShareTitle" @onclick="() => sharing = true">
                     <Icon Name="share" /> Share
+                    @if (note.ShareCount > 0)
+                    {
+                        <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis">@note.ShareCount<span class="visually-hidden"> @(note.ShareCount == 1 ? "person" : "people")</span></span>
+                    }
                 </button>
             }
             @if (CanEdit && note.Pages.Count < UploadLimits.MaxFilesPerNote)
@@ -116,12 +120,13 @@ else
 
     @if (sharing)
     {
-        <ShareDialog NoteId="note.Id" Title="@note.Title" OnClose="() => sharing = false" />
+        <ShareDialog NoteId="note.Id" Title="@note.Title" OnClose="() => sharing = false" SharesChanged="OnSharesChanged" />
     }
 
     @if (current is not null)
     {
         <div class="note-toolbar">
+            <div class="d-flex flex-wrap align-items-center gap-2">
             @if (note.Pages.Count > 1)
             {
                 <nav class="page-chips" aria-label="Pages">
@@ -143,11 +148,32 @@ else
                         <Icon Name="chevron-right" /><span class="visually-hidden">Next page</span>
                     </button>
                 </nav>
+
+                @if (CanEdit)
+                {
+                    var selected = current;
+                    <div class="page-actions" role="group" aria-label="Page @selected.PageNumber">
+                        <button class="page-chip" type="button" disabled="@(Busy || selected.PageNumber <= 1)" @onclick="() => MovePageAsync(selected, selected.PageNumber - 1)" title="Move page @selected.PageNumber earlier">
+                            <Icon Name="arrow-left" /><span class="visually-hidden">Move page @selected.PageNumber earlier</span>
+                        </button>
+                        <button class="page-chip" type="button" disabled="@(Busy || selected.PageNumber >= note.Pages.Count)" @onclick="() => MovePageAsync(selected, selected.PageNumber + 1)" title="Move page @selected.PageNumber later">
+                            <Icon Name="arrow-right" /><span class="visually-hidden">Move page @selected.PageNumber later</span>
+                        </button>
+                        @if (confirmDeletePage)
+                        {
+                            <button class="btn btn-sm btn-danger" type="button" disabled="@Busy" @onclick="() => DeletePageAsync(selected)">Delete page @selected.PageNumber</button>
+                            <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => confirmDeletePage = false">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="page-chip page-chip-danger" type="button" disabled="@Busy" @onclick="() => confirmDeletePage = true" title="Delete page @selected.PageNumber">
+                                <Icon Name="trash3" /><span class="visually-hidden">Delete page @selected.PageNumber</span>
+                            </button>
+                        }
+                    </div>
+                }
             }
-            else
-            {
-                <span></span>
-            }
+            </div>
 
             <div class="segmented" role="tablist" aria-label="View">
                 @foreach (var t in Enum.GetValues<ViewTab>())
@@ -198,6 +224,7 @@ else
     private IReadOnlyList<string> tagsDraft = [];
     private IReadOnlyList<TagDto> knownTags = [];
     private bool confirmDelete;
+    private bool confirmDeletePage;
     private bool sharing;
     private bool polling;
     private string? titleDraft;
@@ -208,6 +235,13 @@ else
     private bool IsOwner => note?.Role is null or NoteRole.Owner;
 
     private bool CanEdit => note?.Role is null or NoteRole.Owner or NoteRole.Contributor;
+
+    private string ShareTitle => note?.ShareCount switch
+    {
+        null or 0 => "Share this note with people in your organization",
+        1 => "Shared with 1 person",
+        var n => $"Shared with {n} people",
+    };
 
     private static string TabLabel(ViewTab t) => t switch
     {
@@ -283,6 +317,7 @@ else
 
     private void SelectPage(int number)
     {
+        confirmDeletePage = false;
         current = note?.Pages.FirstOrDefault(p => p.PageNumber == number) ?? note?.Pages.FirstOrDefault();
     }
 
@@ -368,6 +403,30 @@ else
         if (await RunAsync(async () => ReplacePage(await Api.ReprocessPageAsync(NoteId, page.Id))) && !polling)
         {
             _ = PollAsync();
+        }
+    }
+
+    private async Task MovePageAsync(PageDto page, int pageNumber)
+    {
+        // SetNote keeps the moved page selected, since it tracks the current page by id.
+        await RunAsync(async () => SetNote(await Api.MovePageAsync(NoteId, page.Id, pageNumber, disposed.Token)));
+    }
+
+    private async Task DeletePageAsync(PageDto page)
+    {
+        confirmDeletePage = false;
+        if (await RunAsync(async () => SetNote(await Api.DeletePageAsync(NoteId, page.Id, disposed.Token))))
+        {
+            drafts.Remove(page.Id);
+            SelectPage(Math.Min(page.PageNumber, note?.Pages.Count ?? 1));
+        }
+    }
+
+    private void OnSharesChanged(int count)
+    {
+        if (note is not null)
+        {
+            note = note with { ShareCount = count };
         }
     }
 
