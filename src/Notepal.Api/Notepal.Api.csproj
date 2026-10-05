@@ -8,14 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Npgsql" Version="13.6.0" />
-    <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Dapper" Version="2.1.66" />
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Identity.Web" Version="4.16.0" />
-    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="Aspire.Npgsql" />
+    <PackageReference Include="Azure.AI.Agents.Persistent" />
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <PackageReference Include="PdfPig" />
   </ItemGroup>
 
   <ItemGroup>

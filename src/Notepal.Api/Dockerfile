@@ -1,7 +1,7 @@
 # Build from the repository root: docker build -f src/Notepal.Api/Dockerfile .
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY global.json ./
+COPY global.json Directory.Packages.props ./
 COPY src/Notepal.Shared/Notepal.Shared.csproj src/Notepal.Shared/
 COPY src/Notepal.ServiceDefaults/Notepal.ServiceDefaults.csproj src/Notepal.ServiceDefaults/
 COPY src/Notepal.Api/Notepal.Api.csproj src/Notepal.Api/
