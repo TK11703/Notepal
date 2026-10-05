@@ -18,6 +18,8 @@ builder.Services.AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"))
     .EnableTokenAcquisitionToCallDownstreamApi(apiScopes)
     .AddDownstreamApi(NotepalApiClient.ServiceName, builder.Configuration.GetSection(NotepalApiClient.ServiceName))
+    // People search in the share dialog (Microsoft Graph, delegated User.ReadBasic.All).
+    .AddDownstreamApi(GraphDirectorySearch.ServiceName, builder.Configuration.GetSection(GraphDirectorySearch.ServiceName))
     .AddInMemoryTokenCaches();
 
 builder.Services.Configure<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme, options =>
@@ -42,6 +44,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddScoped<NotepalApiClient>();
+builder.Services.AddScoped<IDirectorySearch, GraphDirectorySearch>();
 
 var app = builder.Build();
 

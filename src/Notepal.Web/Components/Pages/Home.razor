@@ -5,36 +5,74 @@
 
 <AuthorizeView>
     <Authorized>
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
-            <h1 class="h3 mb-0">Welcome back, @(context.User.FindFirst("name")?.Value ?? "there")</h1>
-            <a class="btn btn-primary" href="notes/new">＋ New note</a>
+        <div class="page-header">
+            <div>
+                <h1 class="h3">Welcome back, @(context.User.FindFirst("name")?.Value ?? "there")</h1>
+                <p class="page-subtitle">Pick up where you left off, or capture something new.</p>
+            </div>
+            <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
         </div>
 
         <ApiErrorAlert @bind-Message="ErrorMessage" />
 
-        <h2 class="h5">Recent notes</h2>
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h5 mb-0">Recent notes</h2>
+            @if (recent?.Count > 0)
+            {
+                <a class="small text-decoration-none d-inline-flex align-items-center gap-1" href="notes">View all <Icon Name="chevron-right" /></a>
+            }
+        </div>
         @if (recent is null)
         {
             <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading…</span></div>
         }
         else if (recent.Count == 0)
         {
-            <p class="text-body-secondary">You have no notes yet. <a href="notes/new">Capture your first page</a>.</p>
+            <div class="empty-state">
+                <span class="feature-icon"><Icon Name="journal-text" /></span>
+                <p class="mb-3">You have no notes yet.</p>
+                <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> Capture your first page</a>
+            </div>
         }
         else
         {
             <NoteCardList Notes="recent" />
-            <a href="notes">View all notes →</a>
         }
     </Authorized>
     <NotAuthorized>
-        <div class="py-5 text-center">
-            <h1 class="display-5 fw-bold">📝 Notepal</h1>
-            <p class="lead col-lg-8 mx-auto">
+        <section class="hero mb-4">
+            <h1 class="display-5 fw-bold mb-3">Your notes, <span class="gradient-text">searchable</span>.</h1>
+            <p class="lead col-lg-8 mx-auto text-body-secondary">
                 Snap a photo of handwritten notes, upload images, PDFs or Word documents, and let AI turn them
                 into searchable, editable text. Your notes are private to your account.
             </p>
-            <a class="btn btn-primary btn-lg" href="authentication/login?returnUrl=%2Fnotes">Sign in to get started</a>
+            <a class="btn btn-primary btn-lg d-inline-flex align-items-center gap-2" href="authentication/login?returnUrl=%2Fnotes">
+                <Icon Name="box-arrow-in-right" /> Sign in to get started
+            </a>
+            <a class="btn btn-outline-secondary btn-lg ms-sm-2 mt-2 mt-sm-0" href="about">Learn more</a>
+        </section>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            <div class="col">
+                <div class="card h-100"><div class="card-body">
+                    <span class="feature-icon mb-3"><Icon Name="camera-fill" /></span>
+                    <h2 class="h6 fw-semibold">Capture anything</h2>
+                    <p class="small text-body-secondary mb-0">Use your camera or upload photos, PDFs and Word files. Originals are kept unchanged.</p>
+                </div></div>
+            </div>
+            <div class="col">
+                <div class="card h-100"><div class="card-body">
+                    <span class="feature-icon mb-3"><Icon Name="stars" /></span>
+                    <h2 class="h6 fw-semibold">AI transcription</h2>
+                    <p class="small text-body-secondary mb-0">Handwriting becomes text. Compare it with the original side by side and correct it.</p>
+                </div></div>
+            </div>
+            <div class="col">
+                <div class="card h-100"><div class="card-body">
+                    <span class="feature-icon mb-3"><Icon Name="search" /></span>
+                    <h2 class="h6 fw-semibold">Find it again</h2>
+                    <p class="small text-body-secondary mb-0">Full-text search across every page you have captured, with highlighted matches.</p>
+                </div></div>
+            </div>
         </div>
     </NotAuthorized>
 </AuthorizeView>

@@ -8,18 +8,31 @@ side by side, and search everything you have captured. Every user only ever sees
 ## Features
 
 - **Capture**: live camera capture in the browser (`getUserMedia`), the device camera app on phones, or upload
-  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note.
+  JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note,
+  and more pages can be appended to an existing note later (**Add pages**).
 - **Original storage**: the uploaded bytes are stored unchanged in PostgreSQL (`bytea`), alongside the extracted text.
 - **AI OCR**: images (and scanned PDF pages) are sent to a Foundry agent (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
   background queue and resumes automatically after a restart.
-- **Review & correct**: each page has tabs for **Original**, **Notes** and **Side by side**. Corrections are stored
+- **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
+- **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are
+  normalised (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
+  search results, and used to filter **My notes** (tag drop-down) and **Search** (multi-select: notes must have every selected tag,
+  with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
   over corrected text and titles, plus substring matching, with highlighted snippets.
+- **Sharing**: the **Share** button on a note opens a dialog where the owner searches people in the Azure tenant
+  (Microsoft Graph, delegated `User.ReadBasic.All`) or types any email address, then gives each person **Reader**
+  (view and download originals) or **Contributor** (also rename, tag, add pages, correct text, re-run extraction) access.
+  Only the owner can change sharing or delete the note. **Shared notes** in the left
+  navigation lists notes *shared with me* and notes *shared by me*; on *Shared with me* you can tick one or more notes
+  (or **Select all**) and **Leave** them to remove your access.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
-  scopes every SQL statement to the caller's object id (`oid`).
-- **Light / dark / auto theme** toggle (Bootstrap 5.3 colour modes, remembered per browser).
+  scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
+  A note is visible to anyone else only when its owner shares it with them (matched by `oid` or sign-in email).
+- **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
+- **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
 ## Architecture
 
@@ -51,15 +64,25 @@ validation problem details body.
 
 | Method & route | Description |
 | --- | --- |
-| `GET /api/notes?page=&pageSize=` | The caller's notes, newest first |
-| `POST /api/notes` | `multipart/form-data` with `title` and one or more `files` (max 20 files, 20 MB each) |
+| `GET /api/notes?page=&pageSize=&tag=` | The caller's notes, newest first; repeat `tag` to require several tags |
+| `POST /api/notes` | `multipart/form-data` with `title`, optional `tags` (repeatable, max 20) and one or more `files` (max 20 files, 20 MB each) |
 | `GET /api/notes/{id}` | Note with its pages and text |
+| `POST /api/notes/{id}/pages` | `multipart/form-data` with one or more `files`, appended as new pages (the note's total stays within 20 pages) |
 | `PUT /api/notes/{id}` | Rename |
+| `PUT /api/notes/{id}/tags` | Replace the note's tags: `{ "tags": ["biology", "exam prep"] }` |
+| `GET /api/tags` | Tags the caller has used, with note counts (most used first) |
 | `DELETE /api/notes/{id}` | Delete note, pages and originals |
 | `GET /api/notes/{id}/pages/{pageId}/original` | Original file |
 | `PUT /api/notes/{id}/pages/{pageId}/text` | Save corrected text (sending the AI text back clears the correction) |
 | `POST /api/notes/{id}/pages/{pageId}/reprocess` | Re-run text extraction |
-| `GET /api/search?q=&page=&pageSize=` | Full-text search; matches in `snippet` are wrapped in `⟦ ⟧` |
+| `GET /api/notes/{id}/shares` | People the note is shared with (owner only) |
+| `POST /api/notes/{id}/shares` | Share with a person: `{ "email": "bob@contoso.com", "displayName": "Bob", "userId": null, "permission": 0 }` (`0` Reader, `1` Contributor; re-adding updates the permission) |
+| `PUT /api/notes/{id}/shares/{shareId}` | Change a person's permission (owner only) |
+| `DELETE /api/notes/{id}/shares/{shareId}` | Stop sharing (owner), or leave a note shared with you (recipient) |
+| `GET /api/shared/with-me?page=&pageSize=` | Notes other people shared with the caller, with role and sharer |
+| `POST /api/shared/with-me/leave` | Leave notes shared with the caller: `{ "noteIds": ["…"] }` (up to 100); removes only the caller's own shares and returns `{ "left": n }` |
+| `GET /api/shared/by-me?page=&pageSize=` | The caller's notes that are shared, with their recipients |
+| `GET /api/search?q=&tag=&page=&pageSize=` | Full-text search, optionally limited to notes with the given tag(s); matches in `snippet` are wrapped in `⟦ ⟧`. With only `tag`, returns one result per tagged note |
 
 ## Run locally
 
@@ -132,3 +155,9 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 - Background OCR runs inside the API container; unfinished pages are re-queued automatically when it starts again.
 - Legacy binary Word files (`.doc`) are not supported – save them as `.docx` or PDF. Scanned PDFs are OCR'd from the
   largest image embedded on each page.
+- People search in the **Share** dialog uses Microsoft Graph with the delegated `User.ReadBasic.All` permission.
+  `setup-entra.ps1 register` adds and grants it; for an existing registration, re-run `register` (or grant admin
+  consent for `User.ReadBasic.All` on the web app in the Entra portal). Without consent the dialog still lets you share
+  by typing an email address.
+- Shares are matched to recipients by Entra object id when picked from the directory, otherwise by the sign-in email
+  (`preferred_username`), so a person shared by email sees the note as soon as they sign in.

@@ -2,22 +2,25 @@
 @inject NavigationManager Navigation
 
 <div class="page">
-    <div class="sidebar">
+    <aside class="sidebar">
         <NavMenu />
-    </div>
+    </aside>
 
     <main>
-        <div class="top-row px-4 gap-2">
+        <header class="top-row">
             <AuthorizeView>
                 <form class="top-search me-auto" role="search" @onsubmit="SearchAsync">
-                    <input class="form-control form-control-sm" type="search" placeholder="Search notes…" aria-label="Search notes" @bind="searchText" />
+                    <Icon Name="search" Class="top-search-icon" />
+                    <input class="form-control" type="search" placeholder="Search notes…" aria-label="Search notes" @bind="searchText" />
                 </form>
             </AuthorizeView>
-            <ThemeToggle />
-            <LoginDisplay />
-        </div>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <ThemeToggle />
+                <LoginDisplay />
+            </div>
+        </header>
 
-        <article class="content px-4">
+        <article class="content">
             @Body
         </article>
     </main>

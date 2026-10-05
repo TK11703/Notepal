@@ -90,6 +90,7 @@ app.MapDefaultEndpoints();
 app.MapGroup("/api")
     .RequireAuthorization("NotesUser")
     .MapNotesEndpoints()
+    .MapSharingEndpoints()
     .MapSearchEndpoints();
 
 app.Run();

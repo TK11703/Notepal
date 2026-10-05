@@ -1,0 +1,304 @@
+@* Share a note: find people in the organisation's directory (or type an e-mail address), then set Reader / Contributor access. *@
+@inherits NotepalComponentBase
+@implements IDisposable
+@inject IDirectorySearch Directory
+
+<div class="modal-backdrop fade show"></div>
+<div class="modal fade show d-block share-dialog" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" @onkeydown="OnDialogKeyDownAsync">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5 d-flex align-items-center gap-2 min-w-0" id="share-dialog-title">
+                    <Icon Name="share" /> <span class="text-truncate">Share “@Title”</span>
+                </h2>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+            </div>
+            <div class="modal-body">
+                <ApiErrorAlert @bind-Message="ErrorMessage" />
+
+                <label class="form-label fw-semibold" for="share-search">Add people</label>
+                <div class="share-add">
+                    <div class="share-search">
+                        <span class="share-search-icon"><Icon Name="search" /></span>
+                        <input id="share-search" class="form-control" type="text" autocomplete="off" maxlength="@ShareLimits.MaxEmailLength"
+                               placeholder="Search your organisation or type an e-mail address" aria-describedby="share-search-help"
+                               aria-controls="share-results" @bind="query" @bind:event="oninput" @bind:after="OnQueryChangedAsync" @onkeydown="OnSearchKeyDownAsync" />
+                    </div>
+                    <select class="form-select share-permission" aria-label="Permission for people you add" @bind="newPermission">
+                        <option value="@SharePermission.Reader">Reader</option>
+                        <option value="@SharePermission.Contributor">Contributor</option>
+                    </select>
+                </div>
+                <div id="share-search-help" class="form-text">
+                    <strong>Readers</strong> can view the note and download originals. <strong>Contributors</strong> can also rename, tag, correct text and add pages.
+                    Only you can delete the note or change who it is shared with.
+                </div>
+
+                @if (ShowResults)
+                {
+                    <div id="share-results" class="share-results" role="listbox" aria-label="People">
+                        @if (searching)
+                        {
+                            <div class="share-result text-body-secondary"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Searching your organisation…</div>
+                        }
+                        @foreach (var person in results)
+                        {
+                            var already = IsShared(person.Email);
+                            <button type="button" class="share-result" role="option" aria-selected="false" disabled="@(already || Busy)" @onclick="() => AddAsync(person.Email, person.DisplayName, person.Id)">
+                                <span class="avatar" aria-hidden="true">@Initials(person.DisplayName)</span>
+                                <span class="min-w-0 flex-grow-1 text-start">
+                                    <span class="d-block fw-semibold text-truncate">@person.DisplayName</span>
+                                    <span class="d-block small text-body-secondary text-truncate">@person.Email</span>
+                                </span>
+                                @if (already)
+                                {
+                                    <span class="small text-body-secondary">Already added</span>
+                                }
+                                else
+                                {
+                                    <span class="share-result-add"><Icon Name="person-plus" /> Add</span>
+                                }
+                            </button>
+                        }
+                        @if (TypedEmail is { } email && !results.Any(r => r.Email == email))
+                        {
+                            <button type="button" class="share-result" role="option" aria-selected="false" disabled="@(IsShared(email) || Busy)" @onclick="() => AddAsync(email, null, null)">
+                                <span class="avatar avatar-muted" aria-hidden="true"><Icon Name="person-plus" /></span>
+                                <span class="min-w-0 flex-grow-1 text-start">
+                                    <span class="d-block fw-semibold text-truncate">Add @email</span>
+                                    <span class="d-block small text-body-secondary">Share by e-mail address</span>
+                                </span>
+                            </button>
+                        }
+                        @if (!searching && results.Count == 0 && TypedEmail is null)
+                        {
+                            <div class="share-result text-body-secondary small">
+                                @(directoryMessage ?? "No people found. You can type a full e-mail address instead.")
+                            </div>
+                        }
+                    </div>
+                }
+
+                <h3 class="h6 mt-4 mb-2 d-flex align-items-center gap-2"><Icon Name="people" /> People with access</h3>
+                @if (shares is null)
+                {
+                    <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading…</span></div>
+                }
+                else
+                {
+                    <ul class="list-group share-list">
+                        <li class="list-group-item d-flex align-items-center gap-3">
+                            <span class="avatar" aria-hidden="true">@Initials(OwnerName)</span>
+                            <span class="min-w-0 flex-grow-1">
+                                <span class="d-block fw-semibold text-truncate">@(OwnerName ?? "You") <span class="text-body-secondary fw-normal">(you)</span></span>
+                                <span class="d-block small text-body-secondary">Can view, edit, share and delete</span>
+                            </span>
+                            <span class="status-pill status-primary">Owner</span>
+                        </li>
+                        @foreach (var share in shares)
+                        {
+                            <li class="list-group-item d-flex flex-wrap align-items-center gap-3" @key="share.Id">
+                                <span class="avatar" aria-hidden="true">@Initials(share.DisplayName ?? share.Email)</span>
+                                <span class="min-w-0 flex-grow-1">
+                                    <span class="d-block fw-semibold text-truncate">@(share.DisplayName ?? share.Email)</span>
+                                    @if (share.DisplayName is not null)
+                                    {
+                                        <span class="d-block small text-body-secondary text-truncate">@share.Email</span>
+                                    }
+                                </span>
+                                <div class="d-flex align-items-center gap-2 ms-auto">
+                                    <select class="form-select form-select-sm share-permission" aria-label="Permission for @(share.DisplayName ?? share.Email)"
+                                            value="@share.Permission" disabled="@Busy" @onchange="e => ChangePermissionAsync(share, e.Value?.ToString())">
+                                        <option value="@SharePermission.Reader">Reader</option>
+                                        <option value="@SharePermission.Contributor">Contributor</option>
+                                    </select>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Stop sharing with @(share.DisplayName ?? share.Email)" disabled="@Busy" @onclick="() => RemoveAsync(share)">
+                                        <Icon Name="x-lg" /><span class="visually-hidden">Remove @(share.DisplayName ?? share.Email)</span>
+                                    </button>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                    @if (shares.Count == 0)
+                    {
+                        <p class="small text-body-secondary mt-2 mb-0">This note isn’t shared with anyone yet.</p>
+                    }
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" @onclick="CloseAsync">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly CancellationTokenSource disposed = new();
+    private CancellationTokenSource? searchCts;
+    private List<NoteShareDto>? shares;
+    private IReadOnlyList<DirectoryUserDto> results = [];
+    private SharePermission newPermission = SharePermission.Reader;
+    private string? query;
+    private string? directoryMessage;
+    private bool searching;
+    private string? currentUserId;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    [Parameter, EditorRequired] public Guid NoteId { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Raised with the number of people the note is shared with whenever it changes.</summary>
+    [Parameter] public EventCallback<int> SharesChanged { get; set; }
+
+    private string? OwnerName { get; set; }
+
+    private bool ShowResults => !string.IsNullOrWhiteSpace(query) && query.Trim().Length >= 2;
+
+    private string? TypedEmail => ShareLimits.NormalizeEmail(query);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationState is not null)
+        {
+            var user = (await AuthenticationState).User;
+            OwnerName = user.FindFirst("name")?.Value;
+            currentUserId = user.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value ?? user.FindFirst("oid")?.Value;
+        }
+
+        await RunAsync(async () => shares = await Api.GetSharesAsync(NoteId, disposed.Token));
+    }
+
+    private bool IsShared(string email) => shares?.Any(s => s.Email == email) == true;
+
+    private async Task OnQueryChangedAsync()
+    {
+        searchCts?.Cancel();
+        searchCts?.Dispose();
+        searchCts = CancellationTokenSource.CreateLinkedTokenSource(disposed.Token);
+        var token = searchCts.Token;
+
+        var term = query?.Trim() ?? string.Empty;
+        if (term.Length < 2)
+        {
+            results = [];
+            searching = false;
+            return;
+        }
+
+        searching = true;
+        try
+        {
+            // Debounce typing so the directory is not queried for every key press.
+            await Task.Delay(300, token);
+            var found = await Directory.SearchAsync(term, token);
+            results = found.Where(p => p.Id != currentUserId).ToList();
+            directoryMessage = null;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (DirectorySearchUnavailableException ex)
+        {
+            results = [];
+            directoryMessage = ex.Message;
+        }
+
+        searching = false;
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter")
+        {
+            return;
+        }
+
+        if (TypedEmail is { } email && !IsShared(email))
+        {
+            var match = results.FirstOrDefault(r => r.Email == email);
+            await AddAsync(email, match?.DisplayName, match?.Id);
+        }
+        else if (results.Count == 1 && !IsShared(results[0].Email))
+        {
+            await AddAsync(results[0].Email, results[0].DisplayName, results[0].Id);
+        }
+    }
+
+    private async Task OnDialogKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseAsync();
+        }
+    }
+
+    private async Task AddAsync(string email, string? displayName, string? userId)
+    {
+        var request = new AddNoteShareRequest(email, displayName, userId, newPermission);
+        if (await RunAsync(async () => Upsert(await Api.AddShareAsync(NoteId, request, disposed.Token))))
+        {
+            searchCts?.Cancel();
+            query = null;
+            results = [];
+            searching = false;
+            await SharesChanged.InvokeAsync(shares?.Count ?? 0);
+        }
+    }
+
+    private async Task ChangePermissionAsync(NoteShareDto share, string? value)
+    {
+        if (!Enum.TryParse<SharePermission>(value, out var permission) || permission == share.Permission)
+        {
+            return;
+        }
+
+        await RunAsync(async () => Upsert(await Api.UpdateShareAsync(NoteId, share.Id, permission, disposed.Token)));
+    }
+
+    private async Task RemoveAsync(NoteShareDto share)
+    {
+        if (await RunAsync(() => Api.RemoveShareAsync(NoteId, share.Id, disposed.Token)))
+        {
+            shares?.RemoveAll(s => s.Id == share.Id);
+            await SharesChanged.InvokeAsync(shares?.Count ?? 0);
+        }
+    }
+
+    private void Upsert(NoteShareDto share)
+    {
+        shares ??= [];
+        var index = shares.FindIndex(s => s.Id == share.Id);
+        if (index >= 0)
+        {
+            shares[index] = share;
+        }
+        else
+        {
+            shares.Add(share);
+        }
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    internal static string Initials(string? name)
+    {
+        var parts = (name ?? string.Empty).Split([' ', '.', '@'], StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[1][..1]).ToUpperInvariant(),
+        };
+    }
+
+    public void Dispose()
+    {
+        searchCts?.Cancel();
+        searchCts?.Dispose();
+        disposed.Cancel();
+        disposed.Dispose();
+    }
+}

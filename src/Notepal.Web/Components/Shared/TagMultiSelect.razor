@@ -1,0 +1,90 @@
+@* Compact drop-down for choosing any number of tags. Selected tags are shown as removable chips next to the button. *@
+<div class="tag-multiselect">
+    <div class="tag-multiselect-anchor" @onkeydown="OnKeyDown">
+        <button type="button" id="@Id" class="btn btn-sm btn-outline-secondary tag-multiselect-toggle d-inline-flex align-items-center gap-1"
+                aria-haspopup="true" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"{Id}-panel")" @onclick="Toggle">
+            <Icon Name="tags" /> @(Selected.Count == 0 ? "Filter by tags" : $"Tags ({Selected.Count})")
+            <Icon Name="chevron-down" Class="tag-multiselect-caret" />
+        </button>
+
+        @if (open)
+        {
+            <div class="tag-multiselect-backdrop" @onclick="Close"></div>
+            <div id="@($"{Id}-panel")" class="tag-multiselect-panel" role="group" aria-label="Choose tags">
+                @if (Options.Count > 8)
+                {
+                    <input class="form-control form-control-sm mb-2" type="search" placeholder="Find a tag…" aria-label="Find a tag"
+                           @bind="filter" @bind:event="oninput" />
+                }
+                <div class="tag-multiselect-options">
+                    @foreach (var option in VisibleOptions)
+                    {
+                        var isChecked = Selected.Contains(option.Name);
+                        var inputId = $"{Id}-{option.Name.GetHashCode():x}";
+                        <label class="tag-multiselect-option" for="@inputId">
+                            <input class="form-check-input mt-0" type="checkbox" id="@inputId" checked="@isChecked" @onchange="() => ToggleTagAsync(option.Name)" />
+                            <span class="text-truncate flex-grow-1">@option.Name</span>
+                            <span class="tag-count">@option.Count</span>
+                        </label>
+                    }
+                    @if (VisibleOptions.Count == 0)
+                    {
+                        <p class="small text-body-secondary mb-0 px-1">No matching tags.</p>
+                    }
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-2 pt-2 border-top">
+                    <button type="button" class="btn btn-sm btn-link text-body-secondary p-0 text-decoration-none" disabled="@(Selected.Count == 0)" @onclick="ClearAsync">Clear all</button>
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="Close">Done</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @foreach (var tag in Selected)
+    {
+        <span class="tag-chip active">
+            <Icon Name="tag" /> @tag
+            <button type="button" class="tag-chip-remove" aria-label="Remove tag filter @tag" title="Remove" @onclick="() => ToggleTagAsync(tag)"><Icon Name="x" /></button>
+        </span>
+    }
+</div>
+
+@code {
+    private bool open;
+    private string? filter;
+
+    [Parameter, EditorRequired] public IReadOnlyList<TagDto> Options { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<string> Selected { get; set; } = [];
+    [Parameter] public EventCallback<IReadOnlyList<string>> SelectedChanged { get; set; }
+    [Parameter] public string Id { get; set; } = "tag-multiselect";
+
+    private List<TagDto> VisibleOptions
+    {
+        get
+        {
+            var f = TagLimits.Normalize(filter);
+            return Options.Where(o => f is null || o.Name.Contains(f, StringComparison.Ordinal) || Selected.Contains(o.Name)).ToList();
+        }
+    }
+
+    private void Toggle() => open = !open;
+
+    private void Close()
+    {
+        open = false;
+        filter = null;
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            Close();
+        }
+    }
+
+    private Task ToggleTagAsync(string tag) =>
+        SelectedChanged.InvokeAsync(Selected.Contains(tag) ? Selected.Where(t => t != tag).ToList() : [.. Selected, tag]);
+
+    private Task ClearAsync() => SelectedChanged.InvokeAsync([]);
+}

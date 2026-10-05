@@ -2,18 +2,33 @@
 
 <AuthorizeView>
     <Authorized>
-        <span class="small text-body-secondary text-truncate d-none d-sm-inline" style="max-width: 14rem;">@context.User.FindFirst("name")?.Value</span>
+        @{ var name = context.User.FindFirst("name")?.Value; }
+        <span class="avatar d-none d-sm-inline-grid" title="@name" aria-hidden="true">@Initials(name)</span>
         <form action="authentication/logout" method="post" class="d-inline">
             <AntiforgeryToken />
             <input type="hidden" name="returnUrl" value="/" />
-            <button type="submit" class="btn btn-sm btn-outline-secondary">Sign out</button>
+            <button type="submit" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" title="Sign out @name">
+                <Icon Name="box-arrow-right" /> <span class="d-none d-lg-inline">Sign out</span>
+                <span class="visually-hidden d-lg-none">Sign out</span>
+            </button>
         </form>
     </Authorized>
     <NotAuthorized>
-        <a class="btn btn-sm btn-primary" href="@LoginUrl">Sign in</a>
+        <a class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" href="@LoginUrl"><Icon Name="box-arrow-in-right" /> Sign in</a>
     </NotAuthorized>
 </AuthorizeView>
 
 @code {
     private string LoginUrl => $"authentication/login?returnUrl={Uri.EscapeDataString("/" + Navigation.ToBaseRelativePath(Navigation.Uri))}";
+
+    private static string Initials(string? name)
+    {
+        var parts = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length switch
+        {
+            0 => "?",
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant(),
+        };
+    }
 }
