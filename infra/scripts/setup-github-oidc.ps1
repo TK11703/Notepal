@@ -6,7 +6,7 @@ $repo = 'TK11703/Notepal'
 $subscription = 'fdadb01b-83a6-4002-9eca-5ff098cdd3bd'
 $appRg = 'rg-notepal'
 $sharedRg = 'rg-common'
-$location = 'eastus'
+$location = 'centralus'
 $acrPull = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 $foundryUser = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 

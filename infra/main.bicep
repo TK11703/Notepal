@@ -16,7 +16,7 @@ param namePrefix string = 'notepal'
 param location string = resourceGroup().location
 
 @description('Region for PostgreSQL. This subscription is restricted from creating flexible servers in eastus, eastus2 and westus2.')
-param postgresLocation string = 'centralus'
+param postgresLocation string = location
 
 @description('Entra ID tenant that signs users in.')
 param tenantId string = tenant().tenantId
