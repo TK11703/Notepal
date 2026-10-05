@@ -136,12 +136,11 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
 ### First-time setup
 
 1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
-2. Create an Entra app/service principal for GitHub Actions and grant it **Contributor** and **Role Based Access Control
-   Administrator** (the template creates role assignments) on the subscription or target resource group, and the same
-   two roles on the shared registry's resource group (`rg-common`) so it can build images there and grant `AcrPull`. Add two
-   federated credentials for this repository:
-   - `repo:<owner>/<repo>:ref:refs/heads/main` – used by the what-if preview
-   - `repo:<owner>/<repo>:environment:production` – used by the approved deployment
+2. `./infra/scripts/setup-github-oidc.ps1` – creates the `notepal-github` app registration GitHub Actions signs in as
+   (no secret), with federated credentials for `repo:<owner>/<repo>:ref:refs/heads/main` (what-if preview) and
+   `repo:<owner>/<repo>:environment:production` (approved deployment). It grants **Contributor** on `rg-notepal` and
+   `rg-common`, plus **Role Based Access Control Administrator** on `rg-common` limited to assigning `AcrPull` and
+   `Foundry User`. Edit the variables at the top for another repository or resource groups. It prints `AZURE_CLIENT_ID`.
 3. Configure the repository:
    - Settings → Environments: create **production**, enable **Required reviewers** and add the approvers (optionally
      restrict deployment branches to `main`).
