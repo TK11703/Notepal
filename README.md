@@ -83,11 +83,11 @@ All endpoints (except `/healthz`) require a token with the `access_as_user` scop
 
 ## Run locally
 
-Prerequisites: .NET 10 SDK, Docker, Azure CLI.
+Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+ (`pwsh`, for the Entra setup script; on Windows run it from `pwsh`, elsewhere run it directly or with `pwsh ./infra/scripts/setup-entra.ps1 …`).
 
 1. Start PostgreSQL: `docker compose up -d`
-2. Create the app registrations (once): `./infra/scripts/setup-entra.sh register` and note the printed ids.
-3. Create a client secret for local development: `./infra/scripts/setup-entra.sh dev-secret`
+2. Create the app registrations (once): `./infra/scripts/setup-entra.ps1 register` and note the printed ids.
+3. Create a client secret for local development: `./infra/scripts/setup-entra.ps1 dev-secret`
 4. Configure user secrets:
    ```bash
    cd src/Notepal.Api
@@ -127,7 +127,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 
 ### First-time setup
 
-1. `./infra/scripts/setup-entra.sh register` – note the API/Web client ids.
+1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
 2. Create an Entra app/service principal for GitHub Actions with a federated credential for this repository and grant it
    **Contributor** and **Role Based Access Control Administrator** (the template creates role assignments) on the
    subscription or target resource group.
@@ -138,7 +138,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 4. Run the **Deploy to Azure** workflow. It deploys the infrastructure, builds both images in ACR and deploys the
    container apps.
 5. Once, after the first deployment, run the command printed in the workflow summary:
-   `./infra/scripts/setup-entra.sh finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
+   `./infra/scripts/setup-entra.ps1 finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
    and trusts the web app's managed identity.
 
 ### Operational notes
@@ -150,7 +150,7 @@ in Azure. The API reaches Foundry with its own managed identity (`Azure AI User`
 - Legacy binary Word files (`.doc`) are not supported – save them as `.docx` or PDF. Scanned PDFs are OCR'd from the
   largest image embedded on each page.
 - People search in the **Share** dialog uses Microsoft Graph with the delegated `User.ReadBasic.All` permission.
-  `setup-entra.sh register` adds and grants it; for an existing registration, re-run `register` (or grant admin
+  `setup-entra.ps1 register` adds and grants it; for an existing registration, re-run `register` (or grant admin
   consent for `User.ReadBasic.All` on the web app in the Entra portal). Without consent the dialog still lets you share
   by typing an email address.
 - Shares are matched to recipients by Entra object id when picked from the directory, otherwise by the sign-in email

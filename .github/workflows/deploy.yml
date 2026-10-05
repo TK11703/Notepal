@@ -84,6 +84,6 @@ jobs:
             echo
             echo "First deployment? Finish the Entra setup once with:"
             echo '```'
-            echo "./infra/scripts/setup-entra.sh finalize $web_url $principal"
+            echo "./infra/scripts/setup-entra.ps1 finalize $web_url $principal"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
