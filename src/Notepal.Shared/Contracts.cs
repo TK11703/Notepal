@@ -95,7 +95,7 @@ public sealed record NoteShareDto(
 
 /// <summary>
 /// Shares a note with someone. <see cref="UserId"/> (the Entra object id) is set when the person was picked from the directory;
-/// otherwise the share is matched by e-mail address when they sign in.
+/// otherwise the share is matched by email address when they sign in.
 /// </summary>
 public sealed record AddNoteShareRequest(string Email, string? DisplayName = null, string? UserId = null, SharePermission Permission = SharePermission.Reader);
 
@@ -118,7 +118,7 @@ public sealed record LeaveSharedNotesRequest(IReadOnlyList<Guid> NoteIds);
 /// <summary>How many of the requested notes the caller no longer has access to.</summary>
 public sealed record LeaveSharedNotesResult(int Left);
 
-/// <summary>A person found in the organisation's directory.</summary>
+/// <summary>A person found in the organization's directory.</summary>
 public sealed record DirectoryUserDto(string Id, string DisplayName, string Email);
 
 public static class ShareLimits
@@ -128,7 +128,7 @@ public static class ShareLimits
     public const int MaxDisplayNameLength = 200;
     public const int MaxNotesPerLeave = 100;
 
-    /// <summary>Trims and lower-cases an e-mail address; returns <c>null</c> unless it looks like <c>name@domain.tld</c>.</summary>
+    /// <summary>Trims and lower-cases an email address; returns <c>null</c> unless it looks like <c>name@domain.tld</c>.</summary>
     public static string? NormalizeEmail(string? email)
     {
         var value = email?.Trim().ToLowerInvariant();
@@ -186,7 +186,7 @@ public static class TagLimits
     public const int MaxTagLength = 40;
 
     /// <summary>
-    /// Normalises a tag: trims it, removes a leading '#', treats commas as spaces, collapses whitespace to single spaces and lower-cases it.
+    /// Normalizes a tag: trims it, removes a leading '#', treats commas as spaces, collapses whitespace to single spaces and lower-cases it.
     /// Returns <c>null</c> when nothing usable is left.
     /// </summary>
     public static string? Normalize(string? tag)
@@ -206,7 +206,7 @@ public static class TagLimits
         return value.Length == 0 ? null : value;
     }
 
-    /// <summary>Normalises, de-duplicates and sorts a set of tags.</summary>
+    /// <summary>Normalizes, de-duplicates and sorts a set of tags.</summary>
     public static List<string> NormalizeAll(IEnumerable<string?>? tags) =>
         (tags ?? []).Select(Normalize).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
 }

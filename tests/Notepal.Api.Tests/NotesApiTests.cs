@@ -165,7 +165,7 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
     }
 
     [Fact]
-    public async Task Tags_are_normalised_on_create_and_update()
+    public async Task Tags_are_normalized_on_create_and_update()
     {
         var client = factory.CreateClientFor(NewUser());
         var note = await UploadAsync(client, "Tagged", ["#Biology", " exam  prep ", "biology"], ("t.png", TestFiles.Png));

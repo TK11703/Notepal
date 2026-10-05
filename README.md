@@ -17,7 +17,7 @@ side by side, and search everything you have captured. Every user only ever sees
 - **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
 - **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are
-  normalised (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
+  normalized (lower case, no leading `#`), stored as a PostgreSQL `text[]` with a GIN index, shown on cards, notes and
   search results, and used to filter **My notes** (tag drop-down) and **Search** (multi-select: notes must have every selected tag,
   with or without search terms).
 - **Search**: PostgreSQL full-text search (stemmed, ranked, `websearch_to_tsquery` syntax: `"phrases"`, `or`, `-exclude`)
@@ -32,7 +32,7 @@ side by side, and search everything you have captured. Every user only ever sees
   scopes every SQL statement to the caller's object id (`oid`) or to a share addressed to them.
   A note is visible to anyone else only when its owner shares it with them (matched by `oid` or sign-in email).
 - **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
-- **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
+- **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 color modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).
 
 ## Architecture
 

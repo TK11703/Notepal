@@ -1,4 +1,4 @@
-// Loaded synchronously in <head> so the correct colour scheme is applied before first paint.
+// Loaded synchronously in <head> so the correct color scheme is applied before first paint.
 (function () {
     const storageKey = 'notepal-theme';
     const media = window.matchMedia('(prefers-color-scheme: dark)');

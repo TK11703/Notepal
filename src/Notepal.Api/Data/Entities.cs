@@ -14,7 +14,7 @@ public sealed class Note
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
-    /// <summary>Normalised (see <see cref="TagLimits.Normalize"/>), distinct and sorted tags.</summary>
+    /// <summary>Normalized (see <see cref="TagLimits.Normalize"/>), distinct and sorted tags.</summary>
     public string[] Tags { get; set; } = [];
 }
 
@@ -24,17 +24,17 @@ public sealed class NoteShare
     public Guid Id { get; set; }
     public Guid NoteId { get; set; }
 
-    /// <summary>Denormalised owner id of the note (the person who shared it).</summary>
+    /// <summary>Denormalized owner id of the note (the person who shared it).</summary>
     public string OwnerId { get; set; } = null!;
 
-    /// <summary>Owner's name and e-mail when the note was shared, shown to the recipient.</summary>
+    /// <summary>Owner's name and email when the note was shared, shown to the recipient.</summary>
     public string? OwnerName { get; set; }
     public string? OwnerEmail { get; set; }
 
     /// <summary>Recipient's Entra object id when they were picked from the directory; otherwise <c>null</c>.</summary>
     public string? RecipientId { get; set; }
 
-    /// <summary>Normalised (lower case) e-mail address of the recipient. Shares without an id are matched on it.</summary>
+    /// <summary>Normalized (lower case) email address of the recipient. Shares without an id are matched on it.</summary>
     public string RecipientEmail { get; set; } = null!;
 
     public string? RecipientName { get; set; }

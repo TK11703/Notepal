@@ -1,6 +1,6 @@
 @inject IJSRuntime JS
 
-<div class="segmented segmented-sm" role="radiogroup" aria-label="Colour theme">
+<div class="segmented segmented-sm" role="radiogroup" aria-label="Color theme">
     @foreach (var m in Modes)
     {
         <button type="button" role="radio" class="segmented-item @(mode == m.Value ? "active" : null)" aria-checked="@(mode == m.Value ? "true" : "false")"

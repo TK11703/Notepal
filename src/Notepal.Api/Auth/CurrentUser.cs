@@ -10,8 +10,8 @@ public interface ICurrentUser
     string? UserId { get; }
 
     /// <summary>
-    /// The signed in user's normalised sign-in e-mail address (<c>preferred_username</c>, <c>email</c> or <c>upn</c>), used to
-    /// match notes shared by e-mail address. <c>null</c> when the token carries none.
+    /// The signed in user's normalized sign-in email address (<c>preferred_username</c>, <c>email</c> or <c>upn</c>), used to
+    /// match notes shared by email address. <c>null</c> when the token carries none.
     /// </summary>
     string? Email => null;
 
@@ -52,7 +52,7 @@ public sealed class HttpContextCurrentUser(IHttpContextAccessor accessor) : ICur
             return null;
         }
 
-        // The app registrations are single tenant, so these values are controlled by the organisation's directory.
+        // The app registrations are single tenant, so these values are controlled by the organization's directory.
         return ShareLimits.NormalizeEmail(user!.FindFirst("preferred_username")?.Value)
             ?? ShareLimits.NormalizeEmail(user.FindFirst(ClaimTypes.Email)?.Value ?? user.FindFirst("email")?.Value)
             ?? ShareLimits.NormalizeEmail(user.FindFirst(ClaimTypes.Upn)?.Value ?? user.FindFirst("upn")?.Value);

@@ -5,7 +5,7 @@ using Notepal.Shared;
 namespace Notepal.Api.Endpoints;
 
 /// <summary>
-/// Sharing notes with other people in the organisation. Only a note's owner can see and manage its shares;
+/// Sharing notes with other people in the organization. Only a note's owner can see and manage its shares;
 /// the people it is shared with get <see cref="SharePermission.Reader"/> or <see cref="SharePermission.Contributor"/> access.
 /// </summary>
 public static class SharingEndpoints
@@ -44,7 +44,7 @@ public static class SharingEndpoints
         var email = ShareLimits.NormalizeEmail(body.Email);
         if (email is null)
         {
-            return Invalid("email", "Enter a valid e-mail address.");
+            return Invalid("email", "Enter a valid email address.");
         }
 
         if (!Enum.IsDefined(body.Permission))

@@ -28,7 +28,7 @@ public sealed class OcrOptions
         You receive photos or scans of handwritten or printed notes.
         Transcribe ALL of the text exactly as written, preserving the reading order, line breaks, lists, headings and paragraphs.
         Use Markdown only for structure that is clearly present (bullet lists, numbered lists, headings, tables).
-        Do not summarise, translate, correct spelling or add commentary. If a word is illegible write [illegible].
+        Do not summarize, translate, correct spelling or add commentary. If a word is illegible write [illegible].
         If the image contains no text, reply with an empty response.
         Reply with the transcription only.
         """;

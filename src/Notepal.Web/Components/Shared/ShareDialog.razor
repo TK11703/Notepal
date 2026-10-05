@@ -1,4 +1,4 @@
-@* Share a note: find people in the organisation's directory (or type an e-mail address), then set Reader / Contributor access. *@
+@* Share a note: find people in the organization's directory (or type an email address), then set Reader / Contributor access. *@
 @inherits NotepalComponentBase
 @implements IDisposable
 @inject IDirectorySearch Directory
@@ -21,7 +21,7 @@
                     <div class="share-search">
                         <span class="share-search-icon"><Icon Name="search" /></span>
                         <input id="share-search" class="form-control" type="text" autocomplete="off" maxlength="@ShareLimits.MaxEmailLength"
-                               placeholder="Search your organisation or type an e-mail address" aria-describedby="share-search-help"
+                               placeholder="Search your organization or type an email address" aria-describedby="share-search-help"
                                aria-controls="share-results" @bind="query" @bind:event="oninput" @bind:after="OnQueryChangedAsync" @onkeydown="OnSearchKeyDownAsync" />
                     </div>
                     <select class="form-select share-permission" aria-label="Permission for people you add" @bind="newPermission">
@@ -39,7 +39,7 @@
                     <div id="share-results" class="share-results" role="listbox" aria-label="People">
                         @if (searching)
                         {
-                            <div class="share-result text-body-secondary"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Searching your organisation…</div>
+                            <div class="share-result text-body-secondary"><div class="spinner-border spinner-border-sm" aria-hidden="true"></div> Searching your organization…</div>
                         }
                         @foreach (var person in results)
                         {
@@ -66,14 +66,14 @@
                                 <span class="avatar avatar-muted" aria-hidden="true"><Icon Name="person-plus" /></span>
                                 <span class="min-w-0 flex-grow-1 text-start">
                                     <span class="d-block fw-semibold text-truncate">Add @email</span>
-                                    <span class="d-block small text-body-secondary">Share by e-mail address</span>
+                                    <span class="d-block small text-body-secondary">Share by email address</span>
                                 </span>
                             </button>
                         }
                         @if (!searching && results.Count == 0 && TypedEmail is null)
                         {
                             <div class="share-result text-body-secondary small">
-                                @(directoryMessage ?? "No people found. You can type a full e-mail address instead.")
+                                @(directoryMessage ?? "No people found. You can type a full email address instead.")
                             </div>
                         }
                     </div>

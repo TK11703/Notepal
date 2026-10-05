@@ -118,9 +118,9 @@ function Invoke-Register {
         )
     }
 
-    # Consent to the Graph scopes for the organisation, so people search works without an extra consent prompt.
-    # Needs an admin role (e.g. Cloud Application Administrator); otherwise sharing still works by typing e-mail addresses.
-    Write-Host 'Granting Microsoft Graph User.Read User.ReadBasic.All for the organisation...'
+    # Consent to the Graph scopes for the organization, so people search works without an extra consent prompt.
+    # Needs an admin role (e.g. Cloud Application Administrator); otherwise sharing still works by typing email addresses.
+    Write-Host 'Granting Microsoft Graph User.Read User.ReadBasic.All for the organization...'
     try {
         Invoke-Az ad app permission grant --id $webId --api $GraphAppId --scope 'User.Read User.ReadBasic.All' | Out-Null
     }
@@ -128,7 +128,7 @@ function Invoke-Register {
         Write-Host "  Could not grant consent - ask an administrator to grant consent for '$WebName' in the Entra admin center."
     }
 
-    # Pre-authorise the web app so users are not asked to consent to the API scope separately.
+    # Pre-authorize the web app so users are not asked to consent to the API scope separately.
     Invoke-GraphPatch "https://graph.microsoft.com/v1.0/applications/$apiObject" @{
         api = @{
             requestedAccessTokenVersion = 2

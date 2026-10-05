@@ -15,7 +15,7 @@ public sealed class DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<Databa
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var lockKey = new { Key = AdvisoryLockKey };
 
-        // Serialises replicas that start at the same time.
+        // Serializes replicas that start at the same time.
         await connection.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_lock(@Key)", lockKey, cancellationToken: cancellationToken));
         try
         {

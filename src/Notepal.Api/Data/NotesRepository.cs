@@ -68,7 +68,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
     private const string SearchConfig = "english";
 
-    /// <summary>Matches shares (aliased <c>s</c>) addressed to the caller by object id or, for shares created by e-mail address, by sign-in address.</summary>
+    /// <summary>Matches shares (aliased <c>s</c>) addressed to the caller by object id or, for shares created by email address, by sign-in address.</summary>
     internal const string IsRecipient = "(s.recipient_id = @UserId OR s.recipient_email = @Email)";
 
     /// <summary>The note (aliased <c>n</c>) is owned by or shared with the caller.</summary>
@@ -197,7 +197,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         await using var connection = await db.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
-        // Locking the note serialises concurrent uploads so page numbers and the page limit stay consistent.
+        // Locking the note serializes concurrent uploads so page numbers and the page limit stay consistent.
         var ownerId = await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
             $"SELECT n.owner_id FROM notes n WHERE n.id = @NoteId AND {Editable} FOR UPDATE",
             new { NoteId = noteId, user.UserId, user.Email }, transaction, cancellationToken: ct));

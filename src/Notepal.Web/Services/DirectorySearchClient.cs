@@ -7,10 +7,10 @@ using Notepal.Shared;
 
 namespace Notepal.Web.Services;
 
-/// <summary>Finds people in the organisation's Entra ID directory so notes can be shared with them.</summary>
+/// <summary>Finds people in the organization's Entra ID directory so notes can be shared with them.</summary>
 public interface IDirectorySearch
 {
-    /// <summary>People whose name or e-mail address starts with <paramref name="query"/>.</summary>
+    /// <summary>People whose name or email address starts with <paramref name="query"/>.</summary>
     /// <exception cref="DirectorySearchUnavailableException">The directory cannot be searched (e.g. permission not granted).</exception>
     Task<IReadOnlyList<DirectoryUserDto>> SearchAsync(string query, CancellationToken ct = default);
 }
@@ -83,4 +83,4 @@ public sealed class GraphDirectorySearch(IDownstreamApi api, AuthenticationState
 }
 
 public sealed class DirectorySearchUnavailableException()
-    : Exception("Searching your organisation's directory isn't available right now. Type the person's e-mail address instead.");
+    : Exception("Searching your organization's directory isn't available right now. Type the person's email address instead.");

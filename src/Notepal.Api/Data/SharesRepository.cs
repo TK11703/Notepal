@@ -41,7 +41,7 @@ public sealed class SharesRepository(NpgsqlDataSource db)
         await using var connection = await db.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
-        // Locking the note serialises concurrent changes to its shares.
+        // Locking the note serializes concurrent changes to its shares.
         var owned = await connection.QuerySingleOrDefaultAsync<int?>(new CommandDefinition(
             "SELECT 1 FROM notes WHERE id = @NoteId AND owner_id = @OwnerId FOR UPDATE",
             new { NoteId = noteId, OwnerId = ownerId }, transaction, cancellationToken: ct));
