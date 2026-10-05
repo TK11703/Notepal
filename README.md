@@ -144,13 +144,15 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
 3. Configure the repository:
    - Settings → Environments: create **production**, enable **Required reviewers** and add the approvers (optionally
      restrict deployment branches to `main`).
-   - Settings → Secrets and variables → Actions:
-     - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `POSTGRES_ADMIN_PASSWORD`
+   - Settings → Secrets and variables → Actions (**repository** level, not the environment – the preview job runs
+     outside `production`):
+     - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; `POSTGRES_ADMIN_PASSWORD` only on the
+       **production** environment (the preview uses a throwaway value)
      - Variables: `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
        optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`).
        The Foundry account, project and model deployment are parameters of `infra/main.bicep`
        (`foundryAccountName`, `foundryResourceGroup`, `ocrModelDeploymentName`).
-4. Push to `main`. When **CI** passes, **Deploy to Azure** starts: the *preview* job posts an infrastructure what-if in
+4. Push to `main`. The **CI/CD** workflow builds and tests; when that passes on `main`, the *preview* job posts an infrastructure what-if in
    the run summary, then the *deploy* job waits for an approver. Once approved it deploys the infrastructure, builds both
    images in ACR and deploys the container apps. You can also start it manually from the Actions tab (approval is still
    required).

@@ -1,31 +1,27 @@
-name: Deploy to Azure
+name: CI/CD
 
-# Runs after CI succeeds on main (or manually). The preview job shows an infrastructure what-if; the deploy job uses the
-# 'production' environment, so it waits for a required reviewer to approve before anything in Azure changes.
+# build-test runs for every push and pull request. On main (push or manual run), the preview job then shows an
+# infrastructure what-if, and the deploy job uses the 'production' environment, so it waits for a required reviewer
+# to approve before anything in Azure changes.
 #
 # Required configuration (Settings > Secrets and variables > Actions, and Settings > Environments):
 #   environment: production, with required reviewers
-#   secrets:     AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, POSTGRES_ADMIN_PASSWORD
-#   variables:   AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
-#                (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
+#   production secret:    POSTGRES_ADMIN_PASSWORD (environment only; the preview uses a throwaway value)
+#   repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   repository variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
+#                         (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
+#   (repository level, not environment level: the preview job runs outside the production environment)
 #   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>/<repo>:ref:refs/heads/main' (preview)
 #                and 'repo:<owner>/<repo>:environment:production' (deploy)
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
-
-# Runs waiting for approval are replaced by newer ones; a running deployment is never cancelled.
-concurrency:
-  group: deploy
-  cancel-in-progress: false
 
 env:
   RG: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -34,31 +30,49 @@ env:
   WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
   REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acracccommon' }}
   REGISTRY_RG: ${{ vars.AZURE_REGISTRY_RESOURCE_GROUP || 'rg-common' }}
-  TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+  TAG: ${{ github.sha }}
 
 jobs:
-  preview:
-    # Only green CI runs for pushes to this repository's main branch (never pull requests, including from forks).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
+  build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
+      - uses: actions/checkout@v7
 
-      - uses: azure/login@v2
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Notepal.slnx
+
+      - name: Build
+        run: dotnet build Notepal.slnx --no-restore -c Release
+
+      # Integration tests start PostgreSQL with Testcontainers (Docker is available on ubuntu-latest).
+      - name: Test
+        run: dotnet test Notepal.slnx --no-build -c Release
+
+      - name: Validate Bicep
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+  preview:
+    needs: build-test
+    # Only main of this repository (never pull requests, including from forks).
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: What-if
-        env:
-          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
         run: |
           echo "### Deployment preview for \`${TAG:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
 
@@ -68,7 +82,7 @@ jobs:
           fi
 
           params=(apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID"
-                  postgresAdminPassword="$PG_ADMIN_SECRET"
+                  postgresAdminPassword="$(openssl rand -base64 32)" # secure values aren't compared by what-if
                   registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG")
           login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)
           params+=(apiImage="$login_server/notepal-api:$TAG" webImage="$login_server/notepal-web:$TAG")
@@ -90,15 +104,20 @@ jobs:
   deploy:
     needs: preview
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    # Runs waiting for approval are replaced by newer ones; a running deployment is never cancelled.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     environment:
       name: production
       url: ${{ steps.apps.outputs.webUrl }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
+      - uses: actions/checkout@v7
 
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
