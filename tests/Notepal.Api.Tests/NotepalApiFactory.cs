@@ -32,7 +32,7 @@ public sealed class NotepalApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.UseSetting("ConnectionStrings:Notepal", _postgres.GetConnectionString());
         builder.UseSetting("AzureAd:TenantId", "00000000-0000-0000-0000-000000000001");
         builder.UseSetting("AzureAd:ClientId", "00000000-0000-0000-0000-000000000002");
-        builder.UseSetting("Ocr:ProjectEndpoint", "");
+        builder.UseSetting("Ocr:Endpoint", "");
 
         builder.ConfigureTestServices(services =>
         {

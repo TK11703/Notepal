@@ -2,7 +2,7 @@
 This is a combination of .Net projects that will help you keep track of notes (hand-written or digital).
 
 Capture pages with your camera, upload photos, PDFs or Word documents, and Notepal stores the original and uses an
-**Azure AI Foundry agent** to transcribe the text. You can correct the transcription, view the original and the notes
+**Azure AI Foundry vision model** to transcribe the text. You can correct the transcription, view the original and the notes
 side by side, and search everything you have captured. Every user only ever sees their own notes.
 
 ## Features
@@ -11,7 +11,7 @@ side by side, and search everything you have captured. Every user only ever sees
   JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note,
   and more pages can be appended to an existing note later (**Add pages**).
 - **Original storage**: the uploaded bytes are stored unchanged in PostgreSQL (`bytea`), alongside the extracted text.
-- **AI OCR**: images (and scanned PDF pages) are sent to a Foundry agent (`gpt-4.1-mini` by default) that transcribes
+- **AI OCR**: images (and scanned PDF pages) are sent inline to a Foundry model deployment (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
   background queue and resumes automatically after a restart.
 - **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
@@ -42,7 +42,7 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
                                    ▼  (internal ingress only, bearer token)
                                Notepal.Api  (ASP.NET Core 10 minimal API)
                                    │                     │
-                         Npgsql (plain SQL)        Azure AI Foundry Agent Service
+                         Npgsql (plain SQL)        Azure AI Foundry model (chat completions)
                                    ▼                     (managed identity)
                           PostgreSQL Flexible Server
 ```
@@ -97,8 +97,8 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https
    cd src/Notepal.Api
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
    dotnet user-secrets set "AzureAd:ClientId" "<api-client-id>"
-   # optional – enables OCR (needs `az login` and the "Foundry User" role on the Foundry project)
-   dotnet user-secrets set "Ocr:ProjectEndpoint" "https://aif-acc-common.services.ai.azure.com/api/projects/proj-notepal"
+   # optional – enables OCR (needs `az login` and the "Foundry User" role on the Foundry account)
+   dotnet user-secrets set "Ocr:Endpoint" "https://aif-acc-common.openai.azure.com/"
 
    cd ../Notepal.Web
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
@@ -113,7 +113,7 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https
    Without Aspire: `docker compose up -d`, then `dotnet run --launch-profile https` in `src/Notepal.Api` and
    `src/Notepal.Web`.
 
-Without `Ocr:ProjectEndpoint` everything works except image OCR: such pages are marked *Failed* with an explanation
+Without `Ocr:Endpoint` everything works except image OCR: such pages are marked *Failed* with an explanation
 and you can type the notes yourself.
 
 Run the tests (Docker required): `dotnet test`
@@ -127,11 +127,11 @@ The Bicep template (`infra/main.bicep`) uses the cheapest options that fit the w
 | Container Apps environment | Consumption | Both apps: 0.25 vCPU / 0.5 GiB, **scale to zero** (min 0, max 1 replica). The API uses internal ingress only. |
 | PostgreSQL Flexible Server | Burstable **B1ms**, 32 GB, no HA, 7-day LRS backups | Public access limited to Azure services, TLS required. |
 | Container Registry | Shared, existing (`acracccommon` in `rg-common`) | Not created by the template. Images (`notepal-api`, `notepal-web`) are pulled with managed identities (`AcrPull`, no admin user). |
-| Azure AI Foundry | Shared, existing (`aif-acc-common` / project `proj-notepal` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; the OCR agent is created in the project on first use. |
+| Azure AI Foundry | Shared, existing (`aif-acc-common` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; each image is sent inline in one chat-completions request (no agents, files or threads). |
 | Log Analytics | PerGB2018, 30 days, 1 GB/day cap | |
 
 The web app authenticates to Entra ID with its managed identity (federated credential) – no client secrets are stored
-in Azure. The API reaches the Foundry project with its own managed identity (`Foundry User`, formerly `Azure AI User`).
+in Azure. The API reaches the Foundry account with its own managed identity (`Foundry User`, formerly `Azure AI User`).
 
 ### First-time setup
 
@@ -150,7 +150,7 @@ in Azure. The API reaches the Foundry project with its own managed identity (`Fo
      - Variables: `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
        optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`).
        The Foundry account, project and model deployment are parameters of `infra/main.bicep`
-       (`foundryAccountName`, `foundryResourceGroup`, `foundryProjectName`, `ocrModelDeploymentName`).
+       (`foundryAccountName`, `foundryResourceGroup`, `ocrModelDeploymentName`).
 4. Push to `main`. When **CI** passes, **Deploy to Azure** starts: the *preview* job posts an infrastructure what-if in
    the run summary, then the *deploy* job waits for an approver. Once approved it deploys the infrastructure, builds both
    images in ACR and deploys the container apps. You can also start it manually from the Actions tab (approval is still

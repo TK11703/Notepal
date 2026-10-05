@@ -54,7 +54,7 @@ builder.Services.AddSingleton<PageWorkRepository>();
 builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection(OcrOptions.SectionName));
 if (builder.Configuration.GetSection(OcrOptions.SectionName).Get<OcrOptions>()?.IsConfigured == true)
 {
-    builder.Services.AddSingleton<IOcrClient, FoundryAgentOcrClient>();
+    builder.Services.AddSingleton<IOcrClient, AzureOpenAiOcrClient>();
 }
 else
 {

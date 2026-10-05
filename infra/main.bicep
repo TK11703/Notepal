@@ -2,7 +2,7 @@
 //  * Azure Container Apps (Consumption, scale to zero) for the Blazor web app and the API
 //  * Azure Database for PostgreSQL Flexible Server, Burstable B1ms, 32 GB
 //  * Azure Container Registry: an existing shared registry (not created here)
-//  * Azure AI Foundry: an existing shared project and model deployment for the OCR agent (not created here)
+//  * Azure AI Foundry: an existing shared account and vision model deployment used for OCR (not created here)
 //  * Log Analytics (PerGB, 30 day retention, daily cap)
 //  * Aspire dashboard (Container Apps .NET component) for live traces, metrics and logs
 targetScope = 'resourceGroup'
@@ -37,16 +37,13 @@ param apiImage string = ''
 @description('Full image reference for the web app. Leave empty to deploy only the shared infrastructure.')
 param webImage string = ''
 
-@description('Existing (shared) Foundry account that hosts the OCR project.')
+@description('Existing (shared) Foundry account that hosts the OCR model deployment.')
 param foundryAccountName string = 'aif-acc-common'
 
 @description('Resource group of the Foundry account.')
 param foundryResourceGroup string = 'rg-common'
 
-@description('Existing Foundry project the OCR agent is created in.')
-param foundryProjectName string = 'proj-notepal'
-
-@description('Existing model deployment used by the OCR agent. Must support image input.')
+@description('Existing model deployment used for OCR. Must support image input.')
 param ocrModelDeploymentName string = 'gpt-4.1-mini'
 
 @description('Deploy the Aspire dashboard in the Container Apps environment.')
@@ -158,7 +155,6 @@ module apiFoundryUser 'modules/foundry-user.bicep' = {
   scope: resourceGroup(foundryResourceGroup)
   params: {
     accountName: foundryAccountName
-    projectName: foundryProjectName
     identityId: apiIdentity.id
     principalId: apiIdentity.properties.principalId
   }
@@ -187,7 +183,7 @@ resource aspireDashboard 'Microsoft.App/managedEnvironments/dotNetComponents@202
   }
 }
 
-var foundryProjectEndpoint = 'https://${foundry.properties.customSubDomainName}.services.ai.azure.com/api/projects/${foundryProjectName}'
+var ocrEndpoint = 'https://${foundry.properties.customSubDomainName}.openai.azure.com/'
 var postgresConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Database=${databaseName};Username=${postgresAdminLogin};Password=${postgresAdminPassword};SSL Mode=Require'
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
@@ -234,7 +230,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'ConnectionStrings__Notepal', secretRef: 'postgres-connection' }
             { name: 'AzureAd__TenantId', value: tenantId }
             { name: 'AzureAd__ClientId', value: apiClientId }
-            { name: 'Ocr__ProjectEndpoint', value: foundryProjectEndpoint }
+            { name: 'Ocr__Endpoint', value: ocrEndpoint }
             { name: 'Ocr__ModelDeploymentName', value: foundry::ocrDeployment.name }
             { name: 'Ocr__ManagedIdentityClientId', value: apiIdentity.properties.clientId }
           ]
@@ -339,7 +335,7 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
 
 output registryName string = registry.name
 output registryLoginServer string = registry.properties.loginServer
-output foundryProjectEndpoint string = foundryProjectEndpoint
+output ocrEndpoint string = ocrEndpoint
 // Reading the model deployment fails the deployment if it doesn't exist.
 output ocrModel string = '${foundry::ocrDeployment.properties.model.name} (${foundry::ocrDeployment.properties.model.version})'
 output postgresServer string = postgres.properties.fullyQualifiedDomainName
