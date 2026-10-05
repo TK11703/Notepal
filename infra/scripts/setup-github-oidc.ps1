@@ -22,9 +22,14 @@ if (-not $spId) {
     $spId = az ad sp create --id $appId --query id -o tsv
 }
 
+# GitHub OIDC subjects use immutable ids: repo:<owner>@<owner-id>/<repo>@<repo-id>:...
+$ids = gh api "repos/$repo" --jq '.owner.id, .id'
+$owner, $name = $repo -split '/'
+$subjectRepo = "$owner@$($ids[0])/$name@$($ids[1])"
+
 $subjects = [ordered]@{
-    'github-main'       = "repo:${repo}:ref:refs/heads/main"
-    'github-production' = "repo:${repo}:environment:production"
+    'github-main-v2'       = "repo:${subjectRepo}:ref:refs/heads/main"
+    'github-production-v2' = "repo:${subjectRepo}:environment:production"
 }
 $existing = az ad app federated-credential list --id $appId --query '[].subject' -o tsv
 foreach ($name in $subjects.Keys) {

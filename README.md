@@ -137,8 +137,9 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
 
 1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
 2. `./infra/scripts/setup-github-oidc.ps1` – creates the `notepal-github` app registration GitHub Actions signs in as
-   (no secret), with federated credentials for `repo:<owner>/<repo>:ref:refs/heads/main` (what-if preview) and
-   `repo:<owner>/<repo>:environment:production` (approved deployment). It grants **Contributor** on `rg-notepal` and
+   (no secret), with federated credentials for `repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`
+   (what-if preview) and `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production` (approved deployment).
+   It needs the GitHub CLI (`gh`) signed in to look up the ids. It grants **Contributor** on `rg-notepal` and
    `rg-common`, plus **Role Based Access Control Administrator** on `rg-common` limited to assigning `AcrPull` and
    `Foundry User`. Edit the variables at the top for another repository or resource groups. It prints `AZURE_CLIENT_ID`.
 3. Configure the repository:

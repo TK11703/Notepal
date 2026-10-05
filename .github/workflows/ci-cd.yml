@@ -11,8 +11,8 @@ name: CI/CD
 #   repository variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
 #                         (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
 #   (repository level, not environment level: the preview job runs outside the production environment)
-#   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>/<repo>:ref:refs/heads/main' (preview)
-#                and 'repo:<owner>/<repo>:environment:production' (deploy)
+#   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main'
+#                (preview) and 'repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production' (deploy)
 
 on:
   push:
