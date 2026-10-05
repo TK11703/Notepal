@@ -48,6 +48,7 @@ builder.AddNpgsqlDataSource("notepal");
 DapperConfiguration.Apply();
 builder.Services.AddSingleton<DatabaseMigrator>();
 builder.Services.AddSingleton<NotesRepository>();
+builder.Services.AddSingleton<SharesRepository>();
 builder.Services.AddSingleton<PageWorkRepository>();
 
 builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection(OcrOptions.SectionName));

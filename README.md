@@ -29,7 +29,7 @@ side by side, and search everything you have captured. Every user only ever sees
   navigation lists notes *shared with me* and notes *shared by me*; on *Shared with me* you can tick one or more notes
   (or **Select all**) and **Leave** them to remove your access.
 - **Per-user isolation**: Entra ID sign-in. The API only accepts access tokens for its `access_as_user` scope and
-  scopes every query to the caller's object id (`oid`) – both explicitly and through EF Core global query filters.
+  scopes every SQL statement to the caller's object id (`oid`) or to a share addressed to them.
   A note is visible to anyone else only when its owner shares it with them (matched by `oid` or sign-in email).
 - **About & FAQ pages** (`/about`, `/faq`) describing the features and answering common questions; available without signing in.
 - **Modern, responsive UI** with a **light / dark / auto theme** switcher (Bootstrap 5.3 colour modes plus Notepal design tokens in `wwwroot/app.css`, remembered per browser).

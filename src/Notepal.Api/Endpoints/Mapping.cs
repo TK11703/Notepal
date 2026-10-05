@@ -18,16 +18,20 @@ internal static class Mapping
         page.Error,
         page.UpdatedAt);
 
-    public static NoteDto ToDto(this Note note, NoteAccess? access = null) => new(
-        note.Id,
-        note.Title,
-        note.CreatedAt,
-        note.UpdatedAt,
-        AggregateStatus(note.Pages.Select(p => p.Status)),
-        note.Pages.OrderBy(p => p.PageNumber).Select(p => p.ToDto()).ToList(),
-        note.Tags,
-        access?.Role ?? NoteRole.Owner,
-        access?.SharedBy);
+    public static NoteDto ToDto(this Note note, IEnumerable<Page> pages, NoteAccess? access = null)
+    {
+        var ordered = pages.OrderBy(p => p.PageNumber).ToList();
+        return new(
+            note.Id,
+            note.Title,
+            note.CreatedAt,
+            note.UpdatedAt,
+            AggregateStatus(ordered.Select(p => p.Status)),
+            ordered.Select(p => p.ToDto()).ToList(),
+            note.Tags,
+            access?.Role ?? NoteRole.Owner,
+            access?.SharedBy);
+    }
 
     public static NoteShareDto ToDto(this NoteShare share) => new(
         share.Id,

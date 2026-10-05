@@ -14,25 +14,18 @@ public sealed class Note
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
-    public NpgsqlTsVector TitleSearchVector { get; set; } = null!;
-
     /// <summary>Normalised (see <see cref="TagLimits.Normalize"/>), distinct and sorted tags.</summary>
-    public List<string> Tags { get; set; } = [];
-
-    public List<Page> Pages { get; set; } = [];
-
-    public List<NoteShare> Shares { get; set; } = [];
+    public string[] Tags { get; set; } = [];
 }
 
-/// <summary>Grants another person access to a note. Only the note's owner can create, change or remove shares.</summary>
+/// <summary>Row of the <c>note_shares</c> table: grants another person access to a note. Only the note's owner can create, change or remove shares.</summary>
 public sealed class NoteShare
 {
     public Guid Id { get; set; }
     public Guid NoteId { get; set; }
-    public Note Note { get; set; } = null!;
 
     /// <summary>Denormalised owner id of the note (the person who shared it).</summary>
-    public required string OwnerId { get; set; }
+    public string OwnerId { get; set; } = null!;
 
     /// <summary>Owner's name and e-mail when the note was shared, shown to the recipient.</summary>
     public string? OwnerName { get; set; }
@@ -42,7 +35,7 @@ public sealed class NoteShare
     public string? RecipientId { get; set; }
 
     /// <summary>Normalised (lower case) e-mail address of the recipient. Shares without an id are matched on it.</summary>
-    public required string RecipientEmail { get; set; }
+    public string RecipientEmail { get; set; } = null!;
 
     public string? RecipientName { get; set; }
 
