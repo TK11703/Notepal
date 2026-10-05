@@ -98,7 +98,7 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
    dotnet user-secrets set "AzureAd:ClientId" "<api-client-id>"
    # optional – enables OCR (needs `az login` and the "Foundry User" role on the Foundry project)
-   dotnet user-secrets set "Ocr:ProjectEndpoint" "https://aif-acc-common.services.ai.azure.com/api/projects/proj-default"
+   dotnet user-secrets set "Ocr:ProjectEndpoint" "https://aif-acc-common.services.ai.azure.com/api/projects/proj-notepal"
 
    cd ../Notepal.Web
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
@@ -127,7 +127,7 @@ The Bicep template (`infra/main.bicep`) uses the cheapest options that fit the w
 | Container Apps environment | Consumption | Both apps: 0.25 vCPU / 0.5 GiB, **scale to zero** (min 0, max 1 replica). The API uses internal ingress only. |
 | PostgreSQL Flexible Server | Burstable **B1ms**, 32 GB, no HA, 7-day LRS backups | Public access limited to Azure services, TLS required. |
 | Container Registry | Shared, existing (`acracccommon` in `rg-common`) | Not created by the template. Images (`notepal-api`, `notepal-web`) are pulled with managed identities (`AcrPull`, no admin user). |
-| Azure AI Foundry | Shared, existing (`aif-acc-common` / project `proj-default` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; the OCR agent is created in the project on first use. |
+| Azure AI Foundry | Shared, existing (`aif-acc-common` / project `proj-notepal` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; the OCR agent is created in the project on first use. |
 | Log Analytics | PerGB2018, 30 days, 1 GB/day cap | |
 
 The web app authenticates to Entra ID with its managed identity (federated credential) – no client secrets are stored

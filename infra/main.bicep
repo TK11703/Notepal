@@ -44,7 +44,7 @@ param foundryAccountName string = 'aif-acc-common'
 param foundryResourceGroup string = 'rg-common'
 
 @description('Existing Foundry project the OCR agent is created in.')
-param foundryProjectName string = 'proj-default'
+param foundryProjectName string = 'proj-notepal'
 
 @description('Existing model deployment used by the OCR agent. Must support image input.')
 param ocrModelDeploymentName string = 'gpt-4.1-mini'

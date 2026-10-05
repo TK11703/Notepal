@@ -543,7 +543,7 @@ else
             <div class="pane-body">
                 @if (pg.Status == ProcessingStatus.Failed && !string.IsNullOrEmpty(pg.Error))
                 {
-                    <div class="alert alert-warning small d-flex gap-2"><Icon Name="exclamation-triangle" Class="mt-1" /> <div>@pg.Error @(CanEdit ? "You can still type the notes yourself below." : null)</div></div>
+                    <div class="alert alert-warning small d-flex gap-2"><Icon Name="exclamation-triangle" Class="mt-1 flex-shrink-0" /> <div class="page-error">@pg.Error @(CanEdit ? "You can still type the notes yourself below." : null)</div></div>
                 }
 
                 @if (IsProcessing(pg.Status) && string.IsNullOrEmpty(pg.Text))

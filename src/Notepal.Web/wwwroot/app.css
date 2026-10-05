@@ -536,6 +536,13 @@ mark, .mark {
     flex-direction: column;
 }
 
+.page-error {
+    min-width: 0;
+    max-height: 8rem;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+}
+
 .original-viewer {
     flex: 1;
     min-height: 50vh;

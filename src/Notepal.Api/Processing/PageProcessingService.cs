@@ -1,3 +1,4 @@
+using Azure;
 using Notepal.Api.Data;
 using Notepal.Api.Ocr;
 using Notepal.Shared;
@@ -84,7 +85,13 @@ public sealed class PageProcessingService(
         {
             logger.LogWarning(ex, "Text extraction failed for page {PageId} (attempt {Attempt})", pageId, work.Attempts);
             var retry = ex is not (OcrUnavailableException or NotSupportedException) && work.Attempts < MaxAttempts;
-            var error = ex is OcrUnavailableException ? ex.Message : $"Text extraction failed: {ex.Message}";
+            var error = ex switch
+            {
+                OcrUnavailableException => ex.Message,
+                // Service errors carry raw JSON and response headers; the full details are in the log above.
+                RequestFailedException failed => $"Text extraction failed: the OCR service returned an error ({failed.Status}). Details are in the API logs.",
+                _ => $"Text extraction failed: {ex.Message}",
+            };
             await pages.FailAsync(pageId, retry ? ProcessingStatus.Pending : ProcessingStatus.Failed, Truncate(error, MaxErrorLength), CancellationToken.None);
 
             if (retry)
