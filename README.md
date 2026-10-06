@@ -150,7 +150,9 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
      - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; `POSTGRES_ADMIN_PASSWORD` only on the
        **production** environment (the preview uses a throwaway value)
      - Variables: `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
-       optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`).
+       optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`) and
+       `NOTEPAL_DASHBOARD_USER_IDS` (comma-separated Entra user object ids that may open the Aspire dashboard; it
+       requires Contributor directly on the Container Apps environment, inherited roles don't count).
        The Foundry account, project and model deployment are parameters of `infra/main.bicep`
        (`foundryAccountName`, `foundryResourceGroup`, `ocrModelDeploymentName`).
 4. Push to `main`. The **CI/CD** workflow builds and tests; when that passes on `main`, the *preview* job posts an infrastructure what-if in

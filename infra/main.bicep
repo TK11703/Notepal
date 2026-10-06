@@ -49,6 +49,9 @@ param ocrModelDeploymentName string = 'gpt-4.1-mini'
 @description('Deploy the Aspire dashboard in the Container Apps environment.')
 param enableAspireDashboard bool = true
 
+@description('Comma-separated Entra user object ids that get Contributor on the Container Apps environment to open the Aspire dashboard.')
+param dashboardUserIds string = ''
+
 @description('Existing (shared) container registry that the images are built in and pulled from.')
 param registryName string = 'acracccommon'
 
@@ -58,6 +61,8 @@ param registryResourceGroup string = 'rg-common'
 var suffix = uniqueString(resourceGroup().id)
 var deployApps = !empty(apiImage) && !empty(webImage)
 var databaseName = 'notepal'
+var contributorRole = 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+var dashboardUsers = filter(map(split(dashboardUserIds, ','), id => trim(id)), id => !empty(id))
 
 resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-${namePrefix}-api'
@@ -182,6 +187,19 @@ resource aspireDashboard 'Microsoft.App/managedEnvironments/dotNetComponents@202
     componentType: 'AspireDashboard'
   }
 }
+
+// The dashboard ignores roles inherited from the resource group or subscription.
+resource dashboardAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
+  for userId in (enableAspireDashboard ? dashboardUsers : []): {
+    name: guid(environment.id, userId, contributorRole)
+    scope: environment
+    properties: {
+      principalId: userId
+      principalType: 'User'
+      roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', contributorRole)
+    }
+  }
+]
 
 var ocrEndpoint = 'https://${foundry.properties.customSubDomainName}.openai.azure.com/'
 var postgresConnectionString = 'Host=${postgres.properties.fullyQualifiedDomainName};Database=${databaseName};Username=${postgresAdminLogin};Password=${postgresAdminPassword};SSL Mode=Require'

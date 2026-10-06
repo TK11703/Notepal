@@ -9,6 +9,7 @@ name: CI/CD
 #   production secret:    POSTGRES_ADMIN_PASSWORD (environment only; the preview uses a throwaway value)
 #   repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #   repository variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
+#                         (optional) NOTEPAL_DASHBOARD_USER_IDS (comma-separated Entra user object ids for the Aspire dashboard)
 #                         (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
 #   (repository level, not environment level: the preview job runs outside the production environment)
 #   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main'
@@ -28,6 +29,7 @@ env:
   LOCATION: ${{ vars.AZURE_LOCATION }}
   API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
   WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
+  DASHBOARD_USER_IDS: ${{ vars.NOTEPAL_DASHBOARD_USER_IDS }}
   REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acracccommon' }}
   REGISTRY_RG: ${{ vars.AZURE_REGISTRY_RESOURCE_GROUP || 'rg-common' }}
   TAG: ${{ github.sha }}
@@ -81,7 +83,7 @@ jobs:
             exit 0
           fi
 
-          params=(location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID"
+          params=(location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS"
                   postgresAdminPassword="$(openssl rand -base64 32)" # secure values aren't compared by what-if
                   registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG")
           login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)
@@ -139,7 +141,7 @@ jobs:
             --resource-group "$RG" \
             --name notepal-infra \
             --template-file infra/main.bicep \
-            --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
+            --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS" \
                          postgresAdminPassword="$PG_ADMIN_SECRET" \
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
             --no-wait
@@ -168,7 +170,7 @@ jobs:
             --resource-group "$RG" \
             --name notepal-apps \
             --template-file infra/main.bicep \
-            --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" \
+            --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS" \
                          postgresAdminPassword="$PG_ADMIN_SECRET" \
                          registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
                          apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
