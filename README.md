@@ -169,6 +169,11 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
   in-memory token cache and data-protection keys are gone, so users are sent through Entra sign-in again
   (normally silent with SSO).
 - Background OCR runs inside the API container; unfinished pages are re-queued automatically when it starts again.
+- Aspire dashboard (traces, metrics, logs): `https://aspire-dashboard.ext.<environment default domain>`. Only users in
+  `NOTEPAL_DASHBOARD_USER_IDS` can sign in – roles inherited from the subscription or resource group give
+  "Could not authenticate user with requested resource". Add someone by appending their object id
+  (`az ad user show --id <upn> --query id -o tsv`) to the variable and redeploying; don't also assign the role by
+  hand, or the deployment fails because the assignment already exists.
 - Legacy binary Word files (`.doc`) are not supported – save them as `.docx` or PDF. Scanned PDFs are OCR'd from the
   largest image embedded on each page.
 - People search in the **Share** dialog uses Microsoft Graph with the delegated `User.ReadBasic.All` permission.
