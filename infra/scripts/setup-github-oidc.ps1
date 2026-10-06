@@ -1,14 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-$appName = 'notepal-github'
+$appName = 'notepal-github-oidc'
 $repo = 'TK11703/Notepal'
 $subscription = 'fdadb01b-83a6-4002-9eca-5ff098cdd3bd'
-$appRg = 'rg-notepal'
-$sharedRg = 'rg-common'
-$location = 'centralus'
-$acrPull = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
-$foundryUser = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+$graphAppId = '00000003-0000-0000-c000-000000000000'
+$applicationReadAll = '9a5d68dd-52b0-4cc2-bd40-abcf44ac3a30'
 
 az account set --subscription $subscription
 
@@ -24,12 +21,12 @@ if (-not $spId) {
 
 # GitHub OIDC subjects use immutable ids: repo:<owner>@<owner-id>/<repo>@<repo-id>:...
 $ids = gh api "repos/$repo" --jq '.owner.id, .id'
-$owner, $name = $repo -split '/'
-$subjectRepo = "$owner@$($ids[0])/$name@$($ids[1])"
+$owner, $repoName = $repo -split '/'
+$subjectRepo = "$owner@$($ids[0])/$repoName@$($ids[1])"
 
 $subjects = [ordered]@{
-    'github-main-v2'       = "repo:${subjectRepo}:ref:refs/heads/main"
-    'github-production-v2' = "repo:${subjectRepo}:environment:production"
+    'gh-main-branch' = "repo:${subjectRepo}:ref:refs/heads/main"
+    'gh-env-prod'    = "repo:${subjectRepo}:environment:production"
 }
 $existing = az ad app federated-credential list --id $appId --query '[].subject' -o tsv
 foreach ($name in $subjects.Keys) {
@@ -43,30 +40,26 @@ foreach ($name in $subjects.Keys) {
     }
 }
 
-if ((az group exists --name $appRg) -ne 'true') {
-    "Creating resource group $appRg..."
-    az group create --name $appRg --location $location --output none
+$graphSpId = az ad sp show --id $graphAppId --query id -o tsv
+$granted = az rest --method GET --url "https://graph.microsoft.com/v1.0/servicePrincipals/$spId/appRoleAssignments" --query 'value[].appRoleId' -o tsv
+if ($granted -notcontains $applicationReadAll) {
+    'Granting Microsoft Graph Application.Read.All (admin consent)...'
+    az ad app permission add --id $appId --api $graphAppId --api-permissions "$applicationReadAll=Role" 2>$null
+    $body = @{ principalId = $spId; resourceId = $graphSpId; appRoleId = $applicationReadAll } | ConvertTo-Json -Compress
+    $file = New-TemporaryFile
+    Set-Content -Path $file -Value $body -Encoding utf8NoBOM
+    az rest --method POST --url "https://graph.microsoft.com/v1.0/servicePrincipals/$spId/appRoleAssignments" --body "@$file" --output none
+    Remove-Item $file
 }
-
-function Grant([string] $role, [string] $rg, [string] $condition) {
-    $scope = "/subscriptions/$subscription/resourceGroups/$rg"
-    $has = @(az role assignment list --assignee $spId --scope $scope --role $role --query '[].{id:id, condition:condition}' -o json | ConvertFrom-Json)
-    if ($has.Count -gt 0 -and $has[0].condition -eq ($condition ? $condition : $null)) { "  $role on $rg already assigned"; return }
-    if ($has.Count -gt 0) { az role assignment delete --ids $has[0].id }
-    $azArgs = @('role', 'assignment', 'create', '--assignee-object-id', $spId, '--assignee-principal-type', 'ServicePrincipal', '--role', $role, '--scope', $scope, '--output', 'none')
-    if ($condition) { $azArgs += @('--condition', $condition, '--condition-version', '2.0') }
-    az @azArgs
-    "  $role on $rg assigned"
-}
-
-# Only lets the pipeline create or delete AcrPull and Foundry User assignments.
-$allowed = "{$acrPull, $foundryUser}"
-$condition = "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals $allowed)) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals $allowed))"
 
 'Assigning roles...'
-Grant 'Contributor' $appRg $null
-Grant 'Contributor' $sharedRg $null
-Grant 'Role Based Access Control Administrator' $sharedRg $condition
+$scope = "/subscriptions/$subscription"
+foreach ($role in 'Contributor', 'User Access Administrator') {
+    $has = @(az role assignment list --assignee $spId --scope $scope --role $role --query '[].id' -o tsv)
+    if ($has.Count -gt 0) { "  $role on subscription already assigned"; continue }
+    az role assignment create --assignee-object-id $spId --assignee-principal-type ServicePrincipal --role $role --scope $scope --output none
+    "  $role on subscription assigned"
+}
 
 ''
 "AZURE_CLIENT_ID       = $appId"

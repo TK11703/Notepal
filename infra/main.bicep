@@ -15,9 +15,6 @@ param namePrefix string = 'notepal'
 @description('Region for all resources.')
 param location string = resourceGroup().location
 
-@description('Region for PostgreSQL. This subscription is restricted from creating flexible servers in eastus, eastus2 and westus2.')
-param postgresLocation string = location
-
 @description('Entra ID tenant that signs users in.')
 param tenantId string = tenant().tenantId
 
@@ -101,7 +98,7 @@ module acrPull 'modules/acr-pull.bicep' = {
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: 'psql-${namePrefix}-${suffix}'
-  location: postgresLocation
+  location: location
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'

@@ -136,12 +136,12 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
 ### First-time setup
 
 1. `./infra/scripts/setup-entra.ps1 register` – note the API/Web client ids.
-2. `./infra/scripts/setup-github-oidc.ps1` – creates the `notepal-github` app registration GitHub Actions signs in as
+2. `./infra/scripts/setup-github-oidc.ps1` – creates the `notepal-github-oidc` app registration GitHub Actions signs in as
    (no secret), with federated credentials for `repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`
    (what-if preview) and `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production` (approved deployment).
-   It needs the GitHub CLI (`gh`) signed in to look up the ids. It grants **Contributor** on `rg-notepal` and
-   `rg-common`, plus **Role Based Access Control Administrator** on `rg-common` limited to assigning `AcrPull` and
-   `Foundry User`. Edit the variables at the top for another repository or resource groups. It prints `AZURE_CLIENT_ID`.
+   It needs the GitHub CLI (`gh`) signed in to look up the ids, and an Entra admin to grant Microsoft Graph
+   `Application.Read.All`. It grants **Contributor** and **User Access Administrator** on the subscription (the
+   workflow creates the resource group). Edit the variables at the top for another repository. It prints `AZURE_CLIENT_ID`.
 3. Configure the repository:
    - Settings → Environments: create **production**, enable **Required reviewers** and add the approvers (optionally
      restrict deployment branches to `main`).
