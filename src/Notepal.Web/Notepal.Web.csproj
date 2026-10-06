@@ -15,6 +15,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Ships _framework/blazor.web.js; the SDK in the Docker image doesn't add it by default. -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
     <UserSecretsId>e620f6ed-0497-474e-868c-431e75f1b930</UserSecretsId>
   </PropertyGroup>
 
