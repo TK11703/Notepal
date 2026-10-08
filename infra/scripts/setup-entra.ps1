@@ -161,18 +161,26 @@ function Invoke-Finalize {
         }
     }
 
+    $credentialName = 'notepal-web-managed-identity'
     $existing = Invoke-Az ad app federated-credential list --id $webId --query "[?subject=='$PrincipalId'].id | [0]" -o tsv
     if (-not $existing) {
         Write-Host "Trusting the web app's managed identity (no client secret needed in Azure)..."
+        # A credential with this name may still trust a previous (replaced) web identity.
+        $stale = Invoke-Az ad app federated-credential list --id $webId --query "[?name=='$credentialName'].id | [0]" -o tsv
         $file = New-TemporaryFile
         try {
             @{
-                name      = 'notepal-web-managed-identity'
+                name      = $credentialName
                 issuer    = "https://login.microsoftonline.com/$tenant/v2.0"
                 subject   = $PrincipalId
                 audiences = @('api://AzureADTokenExchange')
             } | ConvertTo-Json -Compress | Set-Content -Path $file -Encoding utf8NoBOM
-            Invoke-Az ad app federated-credential create --id $webId --parameters $file.FullName | Out-Null
+            if ($stale) {
+                Invoke-Az ad app federated-credential update --id $webId --federated-credential-id $stale --parameters $file.FullName | Out-Null
+            }
+            else {
+                Invoke-Az ad app federated-credential create --id $webId --parameters $file.FullName | Out-Null
+            }
         }
         finally {
             Remove-Item $file -Force -ErrorAction SilentlyContinue
