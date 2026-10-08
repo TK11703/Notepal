@@ -98,7 +98,7 @@ Prerequisites: .NET 10 SDK, Docker, Azure CLI, PowerShell 7+, [Aspire CLI](https
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
    dotnet user-secrets set "AzureAd:ClientId" "<api-client-id>"
    # optional – enables OCR (needs `az login` and the "Foundry User" role on the Foundry account)
-   dotnet user-secrets set "Ocr:Endpoint" "https://aif-common-acc.openai.azure.com/"
+   dotnet user-secrets set "Ocr:Endpoint" "https://aif-shared-acc.openai.azure.com/"
 
    cd ../Notepal.Web
    dotnet user-secrets set "AzureAd:TenantId" "<tenant-id>"
@@ -120,18 +120,21 @@ Run the tests (Docker required): `dotnet test`
 
 ## Deploy to Azure
 
-The Bicep template (`infra/main.bicep`) uses the cheapest options that fit the workload:
+The Bicep template (`infra/main.bicep`) is deployed into the apps resource group (`rg-apps`) and reuses shared
+resources; it only creates the app identities, their role assignments and the two container apps:
 
-| Resource | SKU | Notes |
+| Resource | Where | Notes |
 | --- | --- | --- |
-| Container Apps environment | Consumption | Both apps: 0.25 vCPU / 0.5 GiB, **scale to zero** (min 0, max 1 replica). The API uses internal ingress only. |
-| PostgreSQL Flexible Server | Burstable **B1ms**, 32 GB, no HA, 7-day LRS backups | Public access limited to Azure services, TLS required. |
-| Container Registry | Shared, existing (`acracccommon` in `rg-common`) | Not created by the template. Images (`notepal-api`, `notepal-web`) are pulled with managed identities (`AcrPull`, no admin user). |
-| Azure AI Foundry | Shared, existing (`aif-common-acc` / deployment `gpt-4.1-mini` in `rg-common`) | Not created by the template. Pay per token; each image is sent inline in one chat-completions request (no agents, files or threads). |
-| Log Analytics | PerGB2018, 30 days, 1 GB/day cap | |
+| Container Apps | `ca-notepal-api`, `ca-notepal-web` in `rg-apps` | Consumption: 0.25 vCPU / 0.5 GiB, **scale to zero** (min 0, max 1 replica). The API uses internal ingress only. |
+| Managed identities | `id-notepal-api`, `id-notepal-web` in `rg-apps` | User-assigned, so their ids and role assignments survive container app replacement. |
+| Container Apps environment | Shared, existing (`cae-shared` in `rg-apps`, logs to `law-shared`) | Includes the Aspire dashboard. |
+| PostgreSQL Flexible Server | Shared, existing (`accpsqlshared` in `rg-platform`) | Database `notepal`, owned by the API identity; Entra ID sign-in, no password. |
+| Container Registry | Shared, existing (`acccrshared` in `rg-platform`) | Images (`notepal-api`, `notepal-web`) are pulled with the shared `id-shared-acrpull` identity (AcrPull only) attached to both apps. |
+| Azure AI Foundry | Shared, existing (`aif-shared-acc` / deployment `gpt-4.1-mini` in `rg-platform`) | Pay per token; each image is sent inline in one chat-completions request (no agents, files or threads). |
 
-The web app authenticates to Entra ID with its managed identity (federated credential) – no client secrets are stored
-in Azure. The API reaches the Foundry account with its own managed identity (`Foundry User`, formerly `Azure AI User`).
+The web app authenticates to Entra ID with its managed identity (federated credential) and the API reaches PostgreSQL
+and the Foundry account (`Foundry User`, formerly `Azure AI User`) with its own managed identity – no passwords or
+client secrets are stored in Azure.
 
 ### First-time setup
 
@@ -147,19 +150,30 @@ in Azure. The API reaches the Foundry account with its own managed identity (`Fo
      restrict deployment branches to `main`).
    - Settings → Secrets and variables → Actions (**repository** level, not the environment – the preview job runs
      outside `production`):
-     - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; `POSTGRES_ADMIN_PASSWORD` only on the
-       **production** environment (the preview uses a throwaway value)
-     - Variables: `AZURE_RESOURCE_GROUP`, `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
-       optionally `AZURE_REGISTRY_NAME` / `AZURE_REGISTRY_RESOURCE_GROUP` (default `acracccommon` / `rg-common`) and
+     - Secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+     - Variables: `AZURE_RESOURCE_GROUP` (`rg-apps`), `AZURE_LOCATION`, `NOTEPAL_API_CLIENT_ID`, `NOTEPAL_WEB_CLIENT_ID`,
+       optionally `AZURE_PLATFORM_RESOURCE_GROUP` / `AZURE_REGISTRY_NAME` (default `rg-platform` / `acccrshared`) and
        `NOTEPAL_DASHBOARD_USER_IDS` (comma-separated Entra user object ids that may open the Aspire dashboard; it
        requires Contributor directly on the Container Apps environment, inherited roles don't count).
-       The Foundry account, project and model deployment are parameters of `infra/main.bicep`
-       (`foundryAccountName`, `foundryResourceGroup`, `ocrModelDeploymentName`).
-4. Push to `main`. The **CI/CD** workflow builds and tests; when that passes on `main`, the *preview* job posts an infrastructure what-if in
+       The shared environment, PostgreSQL server, AcrPull identity, Foundry account and model deployment are
+       parameters of `infra/main.bicep` (`environmentName`, `postgresServerName`, `acrPullIdentityName`,
+       `foundryAccountName`, `ocrModelDeploymentName`).
+4. Create the database once, signed in as an Entra admin of the PostgreSQL server (token from
+   `az account get-access-token --resource-type oss-rdbms`), after the `id-notepal-api` identity exists:
+   ```sql
+   -- in the postgres database
+   SELECT * FROM pgaadauth_create_principal_with_oid('id-notepal-api', '<id-notepal-api principal id>', 'service', false, false);
+   GRANT "id-notepal-api" TO CURRENT_USER;
+   CREATE DATABASE notepal OWNER "id-notepal-api";
+   -- in the notepal database (Azure makes azure_pg_admin the owner of public)
+   ALTER SCHEMA public OWNER TO "id-notepal-api";
+   ```
+   The API creates and migrates its tables on startup.
+5. Push to `main`. The **CI/CD** workflow builds and tests; when that passes on `main`, the *preview* job posts an infrastructure what-if in
    the run summary, then the *deploy* job waits for an approver. Once approved it deploys the infrastructure, builds both
    images in ACR and deploys the container apps. You can also start it manually from the Actions tab (approval is still
    required).
-5. Once, after the first deployment, run the command printed in the workflow summary:
+6. Once, after the first deployment, run the command printed in the workflow summary:
    `./infra/scripts/setup-entra.ps1 finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
    and trusts the web app's managed identity.
 

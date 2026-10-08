@@ -1,3 +1,5 @@
+using Azure.Core;
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
@@ -44,7 +46,22 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 // Registers NpgsqlDataSource from ConnectionStrings:notepal (injected by the Aspire AppHost locally) with health checks and tracing.
-builder.AddNpgsqlDataSource("notepal");
+builder.AddNpgsqlDataSource("notepal", configureDataSourceBuilder: dataSource =>
+{
+    // Azure: no password in the connection string, sign in with the API's managed identity (Entra ID) instead.
+    if (string.IsNullOrEmpty(dataSource.ConnectionStringBuilder.Password))
+    {
+        var clientId = builder.Configuration["Database:ManagedIdentityClientId"];
+        TokenCredential credential = !string.IsNullOrWhiteSpace(clientId)
+            ? new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(clientId))
+            : new DefaultAzureCredential();
+        var tokenRequest = new TokenRequestContext(["https://ossrdbms-aad.database.windows.net/.default"]);
+        dataSource.UsePeriodicPasswordProvider(
+            async (_, ct) => (await credential.GetTokenAsync(tokenRequest, ct)).Token,
+            TimeSpan.FromMinutes(30),
+            TimeSpan.FromSeconds(5));
+    }
+});
 DapperConfiguration.Apply();
 builder.Services.AddSingleton<DatabaseMigrator>();
 builder.Services.AddSingleton<NotesRepository>();

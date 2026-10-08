@@ -6,11 +6,11 @@ name: CI/CD
 #
 # Required configuration (Settings > Secrets and variables > Actions, and Settings > Environments):
 #   environment: production, with required reviewers
-#   production secret:    POSTGRES_ADMIN_PASSWORD (environment only; the preview uses a throwaway value)
 #   repository secrets:   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
-#   repository variables: AZURE_RESOURCE_GROUP, AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
+#   repository variables: AZURE_RESOURCE_GROUP (the apps group with the shared Container Apps environment, e.g. rg-apps),
+#                         AZURE_LOCATION, NOTEPAL_API_CLIENT_ID, NOTEPAL_WEB_CLIENT_ID
 #                         (optional) NOTEPAL_DASHBOARD_USER_IDS (comma-separated Entra user object ids for the Aspire dashboard)
-#                         (optional) AZURE_REGISTRY_NAME, AZURE_REGISTRY_RESOURCE_GROUP (defaults in infra/main.bicep)
+#                         (optional) AZURE_PLATFORM_RESOURCE_GROUP, AZURE_REGISTRY_NAME (defaults rg-platform / acccrshared)
 #   (repository level, not environment level: the preview job runs outside the production environment)
 #   federated credentials on the AZURE_CLIENT_ID app: subjects 'repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main'
 #                (preview) and 'repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production' (deploy)
@@ -30,8 +30,8 @@ env:
   API_CLIENT_ID: ${{ vars.NOTEPAL_API_CLIENT_ID }}
   WEB_CLIENT_ID: ${{ vars.NOTEPAL_WEB_CLIENT_ID }}
   DASHBOARD_USER_IDS: ${{ vars.NOTEPAL_DASHBOARD_USER_IDS }}
-  REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acracccommon' }}
-  REGISTRY_RG: ${{ vars.AZURE_REGISTRY_RESOURCE_GROUP || 'rg-common' }}
+  REGISTRY_NAME: ${{ vars.AZURE_REGISTRY_NAME || 'acccrshared' }}
+  PLATFORM_RG: ${{ vars.AZURE_PLATFORM_RESOURCE_GROUP || 'rg-platform' }}
   TAG: ${{ github.sha }}
 
 jobs:
@@ -84,9 +84,8 @@ jobs:
           fi
 
           params=(location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS"
-                  postgresAdminPassword="$(openssl rand -base64 32)" # secure values aren't compared by what-if
-                  registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG")
-          login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)
+                  registryName="$REGISTRY_NAME" platformResourceGroup="$PLATFORM_RG")
+          login_server=$(az acr show --name "$REGISTRY_NAME" --resource-group "$PLATFORM_RG" --query loginServer --output tsv)
           params+=(apiImage="$login_server/notepal-api:$TAG" webImage="$login_server/notepal-web:$TAG")
 
           status=0
@@ -134,36 +133,32 @@ jobs:
 
       - name: Deploy shared infrastructure
         id: infra
-        env:
-          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
         run: |
           az deployment group create \
             --resource-group "$RG" \
             --name notepal-infra \
             --template-file infra/main.bicep \
             --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS" \
-                         postgresAdminPassword="$PG_ADMIN_SECRET" \
-                         registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
+                         registryName="$REGISTRY_NAME" platformResourceGroup="$PLATFORM_RG" \
             --no-wait
           bash infra/scripts/watch-deployment.sh "$RG" notepal-infra
           registry=$(az deployment group show --resource-group "$RG" --name notepal-infra --query properties.outputs.registryName.value --output tsv)
           echo "registry=$registry" >> "$GITHUB_OUTPUT"
-          echo "loginServer=$(az acr show --name "$registry" --resource-group "$REGISTRY_RG" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
+          echo "loginServer=$(az acr show --name "$registry" --resource-group "$PLATFORM_RG" --query loginServer --output tsv)" >> "$GITHUB_OUTPUT"
 
       - name: Build API image
         env:
           REGISTRY: ${{ steps.infra.outputs.registry }}
-        run: az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
+        run: az acr build --registry "$REGISTRY" --resource-group "$PLATFORM_RG" --image "notepal-api:$TAG" --file src/Notepal.Api/Dockerfile . --output none
 
       - name: Build web image
         env:
           REGISTRY: ${{ steps.infra.outputs.registry }}
-        run: az acr build --registry "$REGISTRY" --resource-group "$REGISTRY_RG" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
+        run: az acr build --registry "$REGISTRY" --resource-group "$PLATFORM_RG" --image "notepal-web:$TAG" --file src/Notepal.Web/Dockerfile . --output none
 
       - name: Deploy container apps
         id: apps
         env:
-          PG_ADMIN_SECRET: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           LOGIN_SERVER: ${{ steps.infra.outputs.loginServer }}
         run: |
           az deployment group create \
@@ -171,8 +166,7 @@ jobs:
             --name notepal-apps \
             --template-file infra/main.bicep \
             --parameters location="$LOCATION" apiClientId="$API_CLIENT_ID" webClientId="$WEB_CLIENT_ID" dashboardUserIds="$DASHBOARD_USER_IDS" \
-                         postgresAdminPassword="$PG_ADMIN_SECRET" \
-                         registryName="$REGISTRY_NAME" registryResourceGroup="$REGISTRY_RG" \
+                         registryName="$REGISTRY_NAME" platformResourceGroup="$PLATFORM_RG" \
                          apiImage="$LOGIN_SERVER/notepal-api:$TAG" \
                          webImage="$LOGIN_SERVER/notepal-web:$TAG" \
             --no-wait
