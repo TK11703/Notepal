@@ -43,8 +43,9 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
                                Notepal.Api  (ASP.NET Core 10 minimal API)
                                    │                     │
                          Npgsql (plain SQL)        Azure AI Foundry model (chat completions)
-                                   ▼                     (managed identity)
-                          PostgreSQL Flexible Server
+                     (managed identity, Entra ID)        (managed identity)
+                                   ▼
+                PostgreSQL Flexible Server (shared)
 ```
 
 | Project | Purpose |
@@ -144,7 +145,8 @@ client secrets are stored in Azure.
    (what-if preview) and `repo:<owner>@<owner-id>/<repo>@<repo-id>:environment:production` (approved deployment).
    It needs the GitHub CLI (`gh`) signed in to look up the ids, and an Entra admin to grant Microsoft Graph
    `Application.Read.All`. It grants **Contributor** and **User Access Administrator** on the subscription (the
-   workflow creates the resource group). Edit the variables at the top for another repository. It prints `AZURE_CLIENT_ID`.
+   template assigns roles in both the apps and the platform resource groups). Edit the variables at the top for another
+   repository. It prints `AZURE_CLIENT_ID`.
 3. Configure the repository:
    - Settings → Environments: create **production**, enable **Required reviewers** and add the approvers (optionally
      restrict deployment branches to `main`).
@@ -158,8 +160,13 @@ client secrets are stored in Azure.
        The shared environment, PostgreSQL server, AcrPull identity, Foundry account and model deployment are
        parameters of `infra/main.bicep` (`environmentName`, `postgresServerName`, `acrPullIdentityName`,
        `foundryAccountName`, `ocrModelDeploymentName`).
-4. Create the database once, signed in as an Entra admin of the PostgreSQL server (token from
-   `az account get-access-token --resource-type oss-rdbms`), after the `id-notepal-api` identity exists:
+4. Create the API identity and its database once, before the first deployment (the API migrates the database on
+   startup). The template adopts the existing identity:
+   ```bash
+   az identity create -g rg-apps -n id-notepal-api -l <AZURE_LOCATION> --query principalId -o tsv
+   ```
+   Then, signed in as an Entra admin of the PostgreSQL server (password = token from
+   `az account get-access-token --resource-type oss-rdbms`):
    ```sql
    -- in the postgres database
    SELECT * FROM pgaadauth_create_principal_with_oid('id-notepal-api', '<id-notepal-api principal id>', 'service', false, false);
@@ -170,12 +177,14 @@ client secrets are stored in Azure.
    ```
    The API creates and migrates its tables on startup.
 5. Push to `main`. The **CI/CD** workflow builds and tests; when that passes on `main`, the *preview* job posts an infrastructure what-if in
-   the run summary, then the *deploy* job waits for an approver. Once approved it deploys the infrastructure, builds both
-   images in ACR and deploys the container apps. You can also start it manually from the Actions tab (approval is still
+   the run summary, then the *deploy* job waits for an approver. Once approved it deploys the identities and role
+   assignments, builds both images in ACR and deploys the container apps. The apps and platform resource groups and
+   the shared resources must already exist. You can also start it manually from the Actions tab (approval is still
    required).
 6. Once, after the first deployment, run the command printed in the workflow summary:
    `./infra/scripts/setup-entra.ps1 finalize <web-url> <web-identity-principal-id>` – this registers the redirect URI
-   and trusts the web app's managed identity.
+   and trusts the web app's managed identity. Run it again whenever the web app's URL or identity changes; it
+   replaces the previously trusted identity.
 
 ### Operational notes
 
