@@ -1,0 +1,129 @@
+@* Move a page (with its extracted text and corrections) to another of the user's notes, so it doesn't have to be uploaded and processed again. *@
+@inherits NotepalComponentBase
+@implements IDisposable
+
+<div class="modal-backdrop fade show"></div>
+<div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="move-page-title" @onkeydown="OnDialogKeyDownAsync">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5 d-flex align-items-center gap-2 min-w-0" id="move-page-title">
+                    <Icon Name="box-arrow-right" /> <span class="text-truncate">Move page @PageNumber to another note</span>
+                </h2>
+                <button type="button" class="btn-close" aria-label="Close" @onclick="CloseAsync"></button>
+            </div>
+            <div class="modal-body">
+                <ApiErrorAlert @bind-Message="ErrorMessage" />
+
+                <p class="small text-body-secondary">
+                    The page is added to the end of the note you choose. Its original, extracted text and corrections move with it, so nothing is processed again.
+                </p>
+
+                <label class="visually-hidden" for="move-page-filter">Filter notes</label>
+                <input id="move-page-filter" class="form-control mb-3" type="search" autocomplete="off" placeholder="Filter by title"
+                       @bind="filter" @bind:event="oninput" />
+
+                @if (candidates is null)
+                {
+                    <div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading…</span></div>
+                }
+                else if (Filtered.Count == 0)
+                {
+                    <p class="small text-body-secondary mb-0">@(candidates.Count == 0 ? "You have no other notes to move this page to." : "No notes match the filter.")</p>
+                }
+                else
+                {
+                    <div class="list-group" role="listbox" aria-label="Destination note">
+                        @foreach (var candidate in Filtered)
+                        {
+                            var full = candidate.PageCount >= UploadLimits.MaxFilesPerNote;
+                            <button type="button" role="option" aria-selected="@(selected?.Id == candidate.Id ? "true" : "false")" disabled="@(full || Busy)"
+                                    class="list-group-item list-group-item-action d-flex align-items-center gap-3 @(selected?.Id == candidate.Id ? "active" : null)"
+                                    @onclick="() => selected = candidate">
+                                <Icon Name="journal-text" />
+                                <span class="min-w-0 flex-grow-1 text-start">
+                                    <span class="d-block fw-semibold text-truncate">@candidate.Title</span>
+                                    <span class="d-block small @(selected?.Id == candidate.Id ? null : "text-body-secondary")">
+                                        @candidate.PageCount @(candidate.PageCount == 1 ? "page" : "pages") · Updated @candidate.UpdatedAt.LocalDateTime.ToString("g")
+                                        @(full ? " · Full" : null)
+                                    </span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                    @if (hasMore)
+                    {
+                        <p class="small text-body-secondary mt-2 mb-0">Showing your @NoteLimits.MaxPageSize most recently updated notes.</p>
+                    }
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" @onclick="CloseAsync">Cancel</button>
+                <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-1" disabled="@(selected is null || Busy)" @onclick="MoveAsync">
+                    <Icon Name="box-arrow-right" /> Move page
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly CancellationTokenSource disposed = new();
+    private List<NoteSummaryDto>? candidates;
+    private NoteSummaryDto? selected;
+    private string? filter;
+    private bool hasMore;
+
+    [Parameter, EditorRequired] public Guid NoteId { get; set; }
+    [Parameter, EditorRequired] public Guid PageId { get; set; }
+    [Parameter] public int PageNumber { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Raised after the move with the updated source note and the destination.</summary>
+    [Parameter] public EventCallback<(NoteDto Source, NoteSummaryDto Target)> Moved { get; set; }
+
+    private List<NoteSummaryDto> Filtered =>
+        string.IsNullOrWhiteSpace(filter)
+            ? candidates ?? []
+            : candidates?.Where(n => n.Title.Contains(filter.Trim(), StringComparison.CurrentCultureIgnoreCase)).ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var notes = await Api.ListNotesAsync(1, NoteLimits.MaxPageSize, ct: disposed.Token);
+            hasMore = notes.Total > notes.Items.Count;
+            candidates = notes.Items.Where(n => n.Id != NoteId).ToList();
+        });
+    }
+
+    private async Task MoveAsync()
+    {
+        if (selected is not { } target)
+        {
+            return;
+        }
+
+        NoteDto? source = null;
+        if (await RunAsync(async () => source = await Api.TransferPageAsync(NoteId, PageId, target.Id, disposed.Token)))
+        {
+            await Moved.InvokeAsync((source!, target));
+        }
+    }
+
+    private async Task OnDialogKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await CloseAsync();
+        }
+    }
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    public void Dispose()
+    {
+        disposed.Cancel();
+        disposed.Dispose();
+    }
+}

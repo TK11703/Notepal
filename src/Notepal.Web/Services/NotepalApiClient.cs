@@ -20,6 +20,9 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     public Task<PagedResult<NoteSummaryDto>> ListNotesAsync(int page, int pageSize, string? tag = null, CancellationToken ct = default) =>
         SendAsync<PagedResult<NoteSummaryDto>>(HttpMethod.Get, $"api/notes?page={page}&pageSize={pageSize}{TagQuery(tag)}", null, ct);
 
+    public Task<NoteStatsDto> GetNoteStatsAsync(string? tag = null, CancellationToken ct = default) =>
+        SendAsync<NoteStatsDto>(HttpMethod.Get, $"api/notes/stats?{TagQuery(tag).TrimStart('&')}", null, ct);
+
     public Task<NoteDto?> GetNoteAsync(Guid noteId, CancellationToken ct = default) =>
         SendOrDefaultAsync<NoteDto>(HttpMethod.Get, $"api/notes/{noteId}", null, ct);
 
@@ -84,6 +87,10 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
     /// <summary>Moves a page to another (1-based) position.</summary>
     public Task<NoteDto> MovePageAsync(Guid noteId, Guid pageId, int pageNumber, CancellationToken ct = default) =>
         SendAsync<NoteDto>(HttpMethod.Put, $"api/notes/{noteId}/pages/{pageId}/position", JsonContent.Create(new MovePageRequest(pageNumber)), ct);
+
+    /// <summary>Moves a page to the end of another note; returns the (renumbered) source note.</summary>
+    public Task<NoteDto> TransferPageAsync(Guid noteId, Guid pageId, Guid targetNoteId, CancellationToken ct = default) =>
+        SendAsync<NoteDto>(HttpMethod.Post, $"api/notes/{noteId}/pages/{pageId}/transfer", JsonContent.Create(new TransferPageRequest(targetNoteId)), ct);
 
     /// <summary>People the note is shared with (owner only).</summary>
     public Task<List<NoteShareDto>> GetSharesAsync(Guid noteId, CancellationToken ct = default) =>

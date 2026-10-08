@@ -287,6 +287,59 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
     }
 
     [Fact]
+    public async Task Pages_can_be_moved_to_another_note_without_reprocessing()
+    {
+        var alice = factory.CreateClientFor(NewUser());
+        var bob = factory.CreateClientFor(NewUser());
+        var source = await WaitForProcessingAsync(alice, (await UploadAsync(alice, "Source", ("s1.png", TestFiles.Png), ("s2.png", TestFiles.Png), ("s3.png", TestFiles.Png))).Id);
+        var target = await WaitForProcessingAsync(alice, (await UploadAsync(alice, "Target", ("t1.png", TestFiles.Png))).Id);
+        var ids = source.Pages.Select(p => p.Id).ToArray();
+        (await alice.PutAsJsonAsync($"/api/notes/{source.Id}/pages/{ids[1]}/text", new UpdatePageTextRequest("corrected"))).EnsureSuccessStatusCode();
+
+        var response = await alice.PostAsJsonAsync($"/api/notes/{source.Id}/pages/{ids[1]}/transfer", new TransferPageRequest(target.Id));
+        response.EnsureSuccessStatusCode();
+        var afterSource = (await response.Content.ReadFromJsonAsync<NoteDto>())!;
+        Assert.Equal([ids[0], ids[2]], afterSource.Pages.Select(p => p.Id));
+        Assert.Equal([1, 2], afterSource.Pages.Select(p => p.PageNumber));
+
+        var afterTarget = (await alice.GetFromJsonAsync<NoteDto>($"/api/notes/{target.Id}"))!;
+        Assert.Equal([target.Pages[0].Id, ids[1]], afterTarget.Pages.Select(p => p.Id));
+        var moved = afterTarget.Pages[1];
+        Assert.Equal(2, moved.PageNumber);
+        Assert.Equal(ProcessingStatus.Completed, moved.Status);
+        Assert.Equal("corrected", moved.Text);
+        (await alice.GetAsync($"/api/notes/{target.Id}/pages/{ids[1]}/original")).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.NotFound, (await alice.GetAsync($"/api/notes/{source.Id}/pages/{ids[1]}/original")).StatusCode);
+
+        // Same note, the last page, someone else's target and someone else's source are all refused.
+        Assert.Equal(HttpStatusCode.BadRequest, (await alice.PostAsJsonAsync($"/api/notes/{source.Id}/pages/{ids[0]}/transfer", new TransferPageRequest(source.Id))).StatusCode);
+        var bobsNote = await UploadAsync(bob, "Bob", ("b1.png", TestFiles.Png), ("b2.png", TestFiles.Png));
+        Assert.Equal(HttpStatusCode.NotFound, (await alice.PostAsJsonAsync($"/api/notes/{source.Id}/pages/{ids[0]}/transfer", new TransferPageRequest(bobsNote.Id))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PostAsJsonAsync($"/api/notes/{bobsNote.Id}/pages/{bobsNote.Pages[0].Id}/transfer", new TransferPageRequest(source.Id))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await bob.PostAsJsonAsync($"/api/notes/{source.Id}/pages/{ids[0]}/transfer", new TransferPageRequest(bobsNote.Id))).StatusCode);
+
+        var single = await UploadAsync(alice, "Single", ("x.png", TestFiles.Png));
+        Assert.Equal(HttpStatusCode.Conflict, (await alice.PostAsJsonAsync($"/api/notes/{single.Id}/pages/{single.Pages[0].Id}/transfer", new TransferPageRequest(target.Id))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Stats_count_the_callers_notes_and_pages()
+    {
+        var alice = factory.CreateClientFor(NewUser());
+        var bob = factory.CreateClientFor(NewUser());
+        await UploadAsync(alice, "One", ["work"], ("a.png", TestFiles.Png));
+        await UploadAsync(alice, "Two", ("b.png", TestFiles.Png), ("c.png", TestFiles.Png), ("d.png", TestFiles.Png));
+        await UploadAsync(bob, "Bob", ("e.png", TestFiles.Png));
+
+        var all = (await alice.GetFromJsonAsync<NoteStatsDto>("/api/notes/stats"))!;
+        Assert.Equal((2, 4), (all.NoteCount, all.PageCount));
+        Assert.Equal(2, all.AveragePagesPerNote);
+
+        var tagged = (await alice.GetFromJsonAsync<NoteStatsDto>("/api/notes/stats?tag=work"))!;
+        Assert.Equal((1, 1), (tagged.NoteCount, tagged.PageCount));
+    }
+
+    [Fact]
     public async Task Pages_cannot_be_added_to_someone_elses_note()
     {
         var alice = factory.CreateClientFor(NewUser());

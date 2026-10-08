@@ -57,6 +57,9 @@ public sealed record UpdateNoteTagsRequest(IReadOnlyList<string> Tags);
 /// <summary>Moves a page to <see cref="PageNumber"/> (1-based); the other pages shift to make room.</summary>
 public sealed record MovePageRequest([Range(1, UploadLimits.MaxFilesPerNote)] int PageNumber);
 
+/// <summary>Moves a page, with its extracted text and corrections, to the end of another note owned by the same person.</summary>
+public sealed record TransferPageRequest(Guid TargetNoteId);
+
 /// <summary>A tag the user has used, with the number of their notes that carry it.</summary>
 public sealed record TagDto(string Name, int Count);
 
@@ -154,6 +157,12 @@ public static class ShareLimits
 }
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
+
+/// <summary>Totals over the caller's own notes (optionally only those carrying a set of tags).</summary>
+public sealed record NoteStatsDto(int NoteCount, int PageCount)
+{
+    public double AveragePagesPerNote => NoteCount == 0 ? 0 : (double)PageCount / NoteCount;
+}
 
 public static class NoteLimits
 {

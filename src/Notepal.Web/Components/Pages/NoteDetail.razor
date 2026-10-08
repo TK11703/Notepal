@@ -123,6 +123,20 @@ else
         <ShareDialog NoteId="note.Id" Title="@note.Title" OnClose="() => sharing = false" SharesChanged="OnSharesChanged" />
     }
 
+    @if (movingPage is not null)
+    {
+        <MovePageDialog NoteId="note.Id" PageId="movingPage.Id" PageNumber="movingPage.PageNumber" OnClose="() => movingPage = null" Moved="OnPageMoved" />
+    }
+
+    @if (movedTo is not null)
+    {
+        <div class="alert alert-success alert-dismissible d-flex align-items-center gap-2" role="status">
+            <Icon Name="check2" />
+            <span>Page moved to <a class="alert-link" href="notes/@movedTo.Value.Id?page=@movedTo.Value.PageNumber">@movedTo.Value.Title</a>.</span>
+            <button type="button" class="btn-close" aria-label="Dismiss" @onclick="() => movedTo = null"></button>
+        </div>
+    }
+
     @if (current is not null)
     {
         <div class="note-toolbar">
@@ -159,6 +173,13 @@ else
                         <button class="page-chip" type="button" disabled="@(Busy || selected.PageNumber >= note.Pages.Count)" @onclick="() => MovePageAsync(selected, selected.PageNumber + 1)" title="Move page @selected.PageNumber later">
                             <Icon Name="arrow-right" /><span class="visually-hidden">Move page @selected.PageNumber later</span>
                         </button>
+                        @* Pages belong to the note's owner, so only the owner can move them to another note. *@
+                        @if (IsOwner)
+                        {
+                            <button class="page-chip" type="button" disabled="@Busy" @onclick="() => movingPage = selected" title="Move page @selected.PageNumber to another note">
+                                <Icon Name="box-arrow-right" /><span class="visually-hidden">Move page @selected.PageNumber to another note</span>
+                            </button>
+                        }
                         @if (confirmDeletePage)
                         {
                             <button class="btn btn-sm btn-danger" type="button" disabled="@Busy" @onclick="() => DeletePageAsync(selected)">Delete page @selected.PageNumber</button>
@@ -226,6 +247,8 @@ else
     private bool confirmDelete;
     private bool confirmDeletePage;
     private bool sharing;
+    private PageDto? movingPage;
+    private (Guid Id, string Title, int PageNumber)? movedTo;
     private bool polling;
     private string? titleDraft;
     private int editorVersion;
@@ -294,6 +317,7 @@ else
         if (note?.Id != NoteId)
         {
             note = null;
+            movedTo = null;
             drafts.Clear();
             await RunAsync(async () => SetNote(await Api.GetNoteAsync(NoteId, disposed.Token)));
         }
@@ -420,6 +444,16 @@ else
             drafts.Remove(page.Id);
             SelectPage(Math.Min(page.PageNumber, note?.Pages.Count ?? 1));
         }
+    }
+
+    private void OnPageMoved((NoteDto Source, NoteSummaryDto Target) result)
+    {
+        var page = movingPage!;
+        movingPage = null;
+        drafts.Remove(page.Id);
+        movedTo = (result.Target.Id, result.Target.Title, result.Target.PageCount + 1);
+        SetNote(result.Source);
+        SelectPage(Math.Min(page.PageNumber, note?.Pages.Count ?? 1));
     }
 
     private void OnSharesChanged(int count)

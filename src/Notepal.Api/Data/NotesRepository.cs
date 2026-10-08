@@ -34,6 +34,7 @@ public enum PageChangeOutcome
     NotFound,
     LastPage,
     Changed,
+    TargetFull,
 }
 
 public sealed record AddPagesResult(AddPagesOutcome Outcome, NoteDto? Note = null, IReadOnlyList<Guid>? PageIds = null, int Remaining = 0);
@@ -138,6 +139,20 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         var total = await results.ReadSingleAsync<long>();
         var items = (await results.ReadAsync<NoteSummaryRow>()).Select(r => r.ToDto()).ToList();
         return new PagedResult<NoteSummaryDto>(items, (int)total, page, pageSize);
+    }
+
+    /// <summary>Number of the caller's own notes carrying all of <paramref name="tags"/>, and their pages.</summary>
+    public async Task<NoteStatsDto> GetStatsAsync(string ownerId, IEnumerable<string> tags, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var (notes, pages) = await connection.QuerySingleAsync<(int Notes, int Pages)>(new CommandDefinition("""
+            SELECT count(DISTINCT n.id)::integer, count(p.id)::integer
+              FROM notes n
+              LEFT JOIN pages p ON p.note_id = n.id
+             WHERE n.owner_id = @OwnerId AND n.tags @> @Tags
+            """, new { OwnerId = ownerId, Tags = tags.ToArray() }, cancellationToken: ct));
+
+        return new NoteStatsDto(notes, pages);
     }
 
     public async Task<NoteDto?> GetNoteAsync(Guid noteId, ICurrentUser user, NoteAccess access, CancellationToken ct)
@@ -295,6 +310,72 @@ public sealed class NotesRepository(NpgsqlDataSource db)
             order.Insert(target, pageId);
         }
 
+        await RenumberAsync(connection, transaction, noteId, order, DateTimeOffset.UtcNow, ct);
+
+        await transaction.CommitAsync(ct);
+        var note = await GetNoteAsync(noteId, user, access, ct);
+        return note is null ? (PageChangeOutcome.NotFound, null) : (PageChangeOutcome.Changed, note);
+    }
+
+    /// <summary>
+    /// Moves a page (keeping its original, extracted text and corrections) to the end of another note. The caller must own
+    /// both notes. Returns the source note.
+    /// </summary>
+    public async Task<(PageChangeOutcome Outcome, NoteDto? Note)> TransferPageAsync(
+        Guid noteId, Guid pageId, Guid targetNoteId, ICurrentUser user, NoteAccess access, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+
+        // Lock both notes in a fixed order so concurrent transfers between the same notes can't deadlock.
+        var locked = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT id FROM notes WHERE id = ANY(@Ids) AND owner_id = @UserId ORDER BY id FOR UPDATE",
+            new { Ids = new[] { noteId, targetNoteId }, user.UserId }, transaction, cancellationToken: ct))).AsList();
+        if (locked.Count != 2)
+        {
+            return (PageChangeOutcome.NotFound, null);
+        }
+
+        var order = (await connection.QueryAsync<Guid>(new CommandDefinition(
+            "SELECT id FROM pages WHERE note_id = @NoteId ORDER BY page_number",
+            new { NoteId = noteId }, transaction, cancellationToken: ct))).AsList();
+        if (!order.Remove(pageId))
+        {
+            return (PageChangeOutcome.NotFound, null);
+        }
+
+        if (order.Count == 0)
+        {
+            return (PageChangeOutcome.LastPage, null);
+        }
+
+        var (count, last) = await connection.QuerySingleAsync<(int Count, int Last)>(new CommandDefinition(
+            "SELECT count(*)::integer, coalesce(max(page_number), 0) FROM pages WHERE note_id = @NoteId",
+            new { NoteId = targetNoteId }, transaction, cancellationToken: ct));
+        if (count >= UploadLimits.MaxFilesPerNote)
+        {
+            return (PageChangeOutcome.TargetFull, null);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await connection.ExecuteAsync(new CommandDefinition("""
+            UPDATE pages SET note_id = @TargetNoteId, page_number = @PageNumber, updated_at = @Now
+             WHERE id = @PageId AND note_id = @NoteId;
+
+            UPDATE notes SET updated_at = @Now WHERE id = @TargetNoteId;
+            """, new { PageId = pageId, NoteId = noteId, TargetNoteId = targetNoteId, PageNumber = last + 1, Now = now }, transaction, cancellationToken: ct));
+
+        await RenumberAsync(connection, transaction, noteId, order, now, ct);
+
+        await transaction.CommitAsync(ct);
+        var note = await GetNoteAsync(noteId, user, access, ct);
+        return note is null ? (PageChangeOutcome.NotFound, null) : (PageChangeOutcome.Changed, note);
+    }
+
+    /// <summary>Numbers a note's pages 1..n in the given order.</summary>
+    private static async Task RenumberAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid noteId, List<Guid> order, DateTimeOffset now, CancellationToken ct)
+    {
         // Negate first: uq_pages_note_page_number is checked row by row, so numbers can't be swapped in one step.
         await connection.ExecuteAsync(new CommandDefinition("""
             UPDATE pages SET page_number = -page_number WHERE note_id = @NoteId;
@@ -304,11 +385,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
              WHERE p.id = o.id AND p.note_id = @NoteId;
 
             UPDATE notes SET updated_at = @Now WHERE id = @NoteId;
-            """, new { NoteId = noteId, Ids = order.ToArray(), Now = DateTimeOffset.UtcNow }, transaction, cancellationToken: ct));
-
-        await transaction.CommitAsync(ct);
-        var note = await GetNoteAsync(noteId, user, access, ct);
-        return note is null ? (PageChangeOutcome.NotFound, null) : (PageChangeOutcome.Changed, note);
+            """, new { NoteId = noteId, Ids = order.ToArray(), Now = now }, transaction, cancellationToken: ct));
     }
 
     public async Task<bool> DeleteNoteAsync(string ownerId, Guid noteId, CancellationToken ct)

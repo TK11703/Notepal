@@ -233,6 +233,22 @@ mark, .mark {
     margin: .25rem 0 0;
 }
 
+.note-stats {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: .5rem;
+}
+
+    .note-stats > span:not(:last-child)::after {
+        content: "·";
+        margin-left: .5rem;
+    }
+
+    .note-stats strong {
+        color: var(--bs-body-color);
+        font-weight: 600;
+    }
+
 .back-link {
     display: inline-flex;
     align-items: center;
@@ -454,8 +470,11 @@ mark, .mark {
 }
 
 .page-chip {
-    min-width: 2.1rem;
-    height: 2.1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.125rem;
+    height: 2.125rem;
     padding: 0 .55rem;
     border-radius: .5rem;
     border: 1px solid var(--bs-border-color);
@@ -478,6 +497,13 @@ mark, .mark {
 
     .page-chip:disabled {
         opacity: .45;
+    }
+
+    /* 16px matches the icons' 16-unit viewBox, so strokes land on whole pixels instead of being scaled to ~13.6px. */
+    .page-chip .np-icon {
+        width: 1rem;
+        height: 1rem;
+        vertical-align: 0;
     }
 
 .page-actions {

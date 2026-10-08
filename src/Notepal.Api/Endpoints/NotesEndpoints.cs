@@ -18,6 +18,7 @@ public static class NotesEndpoints
         api.MapGet("/tags", ListTags).WithTags("Tags");
 
         notes.MapGet("/", ListNotes);
+        notes.MapGet("/stats", GetStats);
         notes.MapGet("/{noteId:guid}", GetNote);
         notes.MapPost("/", CreateNote).DisableAntiforgery();
         notes.MapPut("/{noteId:guid}", UpdateNote);
@@ -29,6 +30,7 @@ public static class NotesEndpoints
         notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/reprocess", ReprocessPage);
         notes.MapDelete("/{noteId:guid}/pages/{pageId:guid}", DeletePage);
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/position", MovePage);
+        notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/transfer", TransferPage);
 
         return api;
     }
@@ -38,6 +40,9 @@ public static class NotesEndpoints
         (page, pageSize) = Paging.Normalize(page, pageSize);
         return Results.Ok(await notes.ListNotesAsync(user.UserId!, TagLimits.NormalizeAll(tags), page, pageSize, ct));
     }
+
+    private static async Task<IResult> GetStats(NotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, CancellationToken ct) =>
+        Results.Ok(await notes.GetStatsAsync(user.UserId!, TagLimits.NormalizeAll(tags), ct));
 
     private static async Task<IResult> GetNote(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
@@ -267,6 +272,36 @@ public static class NotesEndpoints
 
         var (outcome, note) = await notes.MovePageAsync(noteId, pageId, body.PageNumber, user, access, ct);
         return outcome == PageChangeOutcome.Changed ? Results.Ok(note) : Results.NotFound();
+    }
+
+    /// <summary>Moves a page to the end of another of the caller's notes, so it doesn't have to be uploaded and processed again.</summary>
+    private static async Task<IResult> TransferPage(Guid noteId, Guid pageId, TransferPageRequest body, NotesRepository notes, ICurrentUser user, CancellationToken ct)
+    {
+        if (body.TargetNoteId == noteId)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["targetNoteId"] = ["Choose a different note."] });
+        }
+
+        var access = await notes.GetAccessAsync(noteId, user, ct);
+        if (access is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Pages belong to the note's owner, so only the owner can move them between notes.
+        if (access.Role != NoteRole.Owner)
+        {
+            return NoteAccess.OwnerOnly("move its pages to another note");
+        }
+
+        var (outcome, note) = await notes.TransferPageAsync(noteId, pageId, body.TargetNoteId, user, access, ct);
+        return outcome switch
+        {
+            PageChangeOutcome.Changed => Results.Ok(note),
+            PageChangeOutcome.LastPage => Results.Conflict(new { message = "A note needs at least one page. Add another page first, or delete the note instead." }),
+            PageChangeOutcome.TargetFull => Results.Conflict(new { message = $"The other note already has the maximum of {UploadLimits.MaxFilesPerNote} pages." }),
+            _ => Results.NotFound(),
+        };
     }
 
     /// <summary>All tags the caller has used, most used first, so the UI can suggest them.</summary>

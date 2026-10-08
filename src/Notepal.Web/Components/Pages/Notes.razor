@@ -7,9 +7,17 @@
 <div class="page-header">
     <div>
         <h1 class="h3">My notes</h1>
-        @if (result is not null && (result.Total > 0 || ActiveTag is not null))
+        @if (stats is not null && (stats.NoteCount > 0 || ActiveTag is not null))
         {
-            <p class="page-subtitle">@result.Total @(result.Total == 1 ? "note" : "notes")@(ActiveTag is null ? null : $" tagged “{ActiveTag}”")</p>
+            <p class="page-subtitle note-stats">
+                <span>Notes <strong>@stats.NoteCount</strong></span>
+                <span>Total pages <strong>@stats.PageCount</strong></span>
+                <span>Average pages per note <strong>@stats.AveragePagesPerNote.ToString("0.#")</strong></span>
+                @if (ActiveTag is not null)
+                {
+                    <span>Tagged “@ActiveTag”</span>
+                }
+            </p>
         }
     </div>
     <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
@@ -66,6 +74,7 @@ else
 @code {
     private const int PageSize = 12;
     private PagedResult<NoteSummaryDto>? result;
+    private NoteStatsDto? stats;
     private IReadOnlyList<TagDto> knownTags = [];
 
     [SupplyParameterFromQuery(Name = "tag")] public string? Tag { get; set; }
@@ -77,7 +86,9 @@ else
     protected override async Task OnParametersSetAsync()
     {
         result = null;
+        stats = null;
         await LoadAsync(1);
+        await RunAsync(async () => stats = await Api.GetNoteStatsAsync(ActiveTag));
     }
 
     private void OnTagSelected(ChangeEventArgs e)
