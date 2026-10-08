@@ -5,18 +5,61 @@
 
 <AuthorizeView>
     <Authorized>
-        <div class="page-header">
-            <div>
-                <h1 class="h3">Welcome back, @(context.User.FindFirst("name")?.Value ?? "there")</h1>
-                <p class="page-subtitle">Pick up where you left off, or capture something new.</p>
+        <section class="welcome mb-4">
+            <div class="welcome-text">
+                <h1 class="h2 fw-bold mb-2">Welcome back, <span class="gradient-text">@FirstName(context.User)</span></h1>
+                <p class="text-body-secondary mb-0">
+                    @if (stats is null || stats.NoteCount == 0)
+                    {
+                        <text>Good to see you. Snap a photo or upload a document and Notepal will turn it into searchable text.</text>
+                    }
+                    else
+                    {
+                        <text>You’ve captured <strong class="text-body">@stats.NoteCount @(stats.NoteCount == 1 ? "note" : "notes")</strong> with <strong class="text-body">@stats.PageCount @(stats.PageCount == 1 ? "page" : "pages")</strong> so far. What’s next?</text>
+                    }
+                </p>
             </div>
-            <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="notes/new"><Icon Name="plus-lg" /> New note</a>
-        </div>
+            <form class="welcome-search" role="search" @onsubmit="Search">
+                <span class="welcome-search-icon"><Icon Name="search" /></span>
+                <label class="visually-hidden" for="home-search">Search your notes</label>
+                <input id="home-search" class="form-control form-control-lg" type="search" placeholder="Search your notes…" maxlength="@NoteLimits.MaxSearchLength" @bind="query" />
+            </form>
+        </section>
 
         <ApiErrorAlert @bind-Message="ErrorMessage" />
 
+        <div class="row row-cols-1 row-cols-sm-3 g-3 mb-4">
+            <div class="col">
+                <a class="card quick-action h-100" href="notes/new">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <span class="feature-icon"><Icon Name="camera-fill" /></span>
+                        <span><span class="d-block fw-semibold">New note</span><span class="d-block small text-body-secondary">Capture or upload pages</span></span>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a class="card quick-action h-100" href="notes">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <span class="feature-icon"><Icon Name="journal-text" /></span>
+                        <span><span class="d-block fw-semibold">My notes</span><span class="d-block small text-body-secondary">Browse and filter by tag</span></span>
+                    </div>
+                </a>
+            </div>
+            <div class="col">
+                <a class="card quick-action h-100" href="shared">
+                    <div class="card-body d-flex align-items-center gap-3">
+                        <span class="feature-icon"><Icon Name="people" /></span>
+                        <span><span class="d-block fw-semibold">Shared notes</span><span class="d-block small text-body-secondary">Notes from your colleagues</span></span>
+                    </div>
+                </a>
+            </div>
+        </div>
+
         <div class="d-flex align-items-center justify-content-between mb-3">
-            <h2 class="h5 mb-0">Recent notes</h2>
+            <div>
+                <h2 class="h5 mb-0">Pick up where you left off</h2>
+                <p class="small text-body-secondary mb-0">Your most recently updated notes</p>
+            </div>
             @if (recent?.Count > 0)
             {
                 <a class="small text-decoration-none d-inline-flex align-items-center gap-1" href="notes">View all <Icon Name="chevron-right" /></a>
@@ -81,13 +124,34 @@
     [CascadingParameter] private Task<AuthenticationState> AuthenticationState { get; set; } = null!;
 
     private IReadOnlyList<NoteSummaryDto>? recent;
+    private NoteStatsDto? stats;
+    private string? query;
 
     protected override async Task OnInitializedAsync()
     {
         var state = await AuthenticationState;
         if (state.User.Identity?.IsAuthenticated == true)
         {
-            await RunAsync(async () => recent = (await Api.ListNotesAsync(1, 6)).Items);
+            await RunAsync(async () =>
+            {
+                var notes = Api.ListNotesAsync(1, 6);
+                var totals = Api.GetNoteStatsAsync();
+                recent = (await notes).Items;
+                stats = await totals;
+            });
+        }
+    }
+
+    private static string FirstName(System.Security.Claims.ClaimsPrincipal user) =>
+        user.FindFirst("given_name")?.Value
+        ?? user.FindFirst("name")?.Value?.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+        ?? "there";
+
+    private void Search()
+    {
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            Navigation.NavigateTo($"search?q={Uri.EscapeDataString(query.Trim())}");
         }
     }
 }
