@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.Identity.Web;
+using Notepal.Database;
 using Notepal.Shared;
 
 namespace Notepal.Api.Auth;
@@ -17,6 +18,12 @@ public interface ICurrentUser
 
     /// <summary>The signed in user's display name (<c>name</c> claim), if any.</summary>
     string? DisplayName => null;
+}
+
+internal static class CurrentUserExtensions
+{
+    public static DatabaseUser ToDatabaseUser(this ICurrentUser user) =>
+        new(user.UserId ?? throw new InvalidOperationException("An authenticated user object id is required."), user.Email);
 }
 
 public sealed class HttpContextCurrentUser(IHttpContextAccessor accessor) : ICurrentUser

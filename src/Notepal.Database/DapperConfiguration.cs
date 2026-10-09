@@ -1,7 +1,7 @@
 using System.Data;
 using Dapper;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
 internal static class DapperConfiguration
 {

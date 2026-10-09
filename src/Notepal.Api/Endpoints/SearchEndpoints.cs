@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Notepal.Api.Auth;
-using Notepal.Api.Data;
+using Notepal.Database;
 using Notepal.Shared;
 
 namespace Notepal.Api.Endpoints;

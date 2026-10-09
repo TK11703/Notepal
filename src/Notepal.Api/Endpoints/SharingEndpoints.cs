@@ -1,5 +1,5 @@
 using Notepal.Api.Auth;
-using Notepal.Api.Data;
+using Notepal.Database;
 using Notepal.Shared;
 
 namespace Notepal.Api.Endpoints;
@@ -106,13 +106,13 @@ public static class SharingEndpoints
     /// <summary>The owner removes someone; a recipient may also remove their own share to leave a note.</summary>
     private static async Task<IResult> RemoveShare(Guid noteId, Guid shareId, NotesRepository notes, SharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
-        if (await shares.RemoveShareAsync(noteId, shareId, user, ct))
+        if (await shares.RemoveShareAsync(noteId, shareId, user.ToDatabaseUser(), ct))
         {
             return Results.NoContent();
         }
 
-        return await notes.GetAccessAsync(noteId, user, ct) is { Role: not NoteRole.Owner }
-            ? NoteAccess.OwnerOnly("change who it is shared with")
+        return await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct) is { Role: not NoteRole.Owner }
+            ? NoteAccessResults.OwnerOnly("change who it is shared with")
             : Results.NotFound();
     }
 
@@ -125,7 +125,7 @@ public static class SharingEndpoints
     private static async Task<IResult> SharedWithMe(SharesRepository shares, ICurrentUser user, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         (page, pageSize) = Paging.Normalize(page, pageSize);
-        return Results.Ok(await shares.SharedWithMeAsync(user, page, pageSize, ct));
+        return Results.Ok(await shares.SharedWithMeAsync(user.ToDatabaseUser(), page, pageSize, ct));
     }
 
     /// <summary>
@@ -145,15 +145,15 @@ public static class SharingEndpoints
             return Invalid(nameof(body.NoteIds), $"You can leave up to {ShareLimits.MaxNotesPerLeave} notes at a time.");
         }
 
-        return Results.Ok(new LeaveSharedNotesResult(await shares.LeaveAsync(noteIds, user, ct)));
+        return Results.Ok(new LeaveSharedNotesResult(await shares.LeaveAsync(noteIds, user.ToDatabaseUser(), ct)));
     }
 
     private static async Task<IResult?> RequireOwnerAsync(NotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
     {
-        var access = await notes.GetAccessAsync(noteId, user, ct);
+        var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
         return access is null ? Results.NotFound()
             : access.Role == NoteRole.Owner ? null
-            : NoteAccess.OwnerOnly("change who it is shared with");
+            : NoteAccessResults.OwnerOnly("change who it is shared with");
     }
 
     private static string? Clean(string? value, int length) =>

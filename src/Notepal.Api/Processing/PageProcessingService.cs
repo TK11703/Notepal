@@ -1,7 +1,7 @@
 using System.ClientModel;
 using Azure;
-using Notepal.Api.Data;
 using Notepal.Api.Ocr;
+using Notepal.Database;
 using Notepal.Shared;
 
 namespace Notepal.Api.Processing;

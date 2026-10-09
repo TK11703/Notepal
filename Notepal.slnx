@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Notepal.Api/Notepal.Api.csproj" />
     <Project Path="src/Notepal.AppHost/Notepal.AppHost.csproj" />
+    <Project Path="src/Notepal.Database/Notepal.Database.csproj" />
     <Project Path="src/Notepal.ServiceDefaults/Notepal.ServiceDefaults.csproj" />
     <Project Path="src/Notepal.Shared/Notepal.Shared.csproj" />
     <Project Path="src/Notepal.Web/Notepal.Web.csproj" />

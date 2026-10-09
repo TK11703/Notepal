@@ -1,6 +1,6 @@
 using Notepal.Shared;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
 /// <summary>Row of the <c>notes</c> table.</summary>
 public sealed class Note

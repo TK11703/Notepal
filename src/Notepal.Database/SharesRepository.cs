@@ -1,10 +1,8 @@
 using Dapper;
 using Npgsql;
-using Notepal.Api.Auth;
-using Notepal.Api.Endpoints;
 using Notepal.Shared;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
 public enum UpsertShareOutcome
 {
@@ -101,7 +99,7 @@ public sealed class SharesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>The owner removes someone; a recipient may also remove their own share to leave a note.</summary>
-    public async Task<bool> RemoveShareAsync(Guid noteId, Guid shareId, ICurrentUser user, CancellationToken ct)
+    public async Task<bool> RemoveShareAsync(Guid noteId, Guid shareId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         return await connection.ExecuteAsync(new CommandDefinition($"""
@@ -112,7 +110,7 @@ public sealed class SharesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>Removes the caller's own shares of the given notes. Returns the number of notes they no longer have access to.</summary>
-    public async Task<int> LeaveAsync(IEnumerable<Guid> noteIds, ICurrentUser user, CancellationToken ct)
+    public async Task<int> LeaveAsync(IEnumerable<Guid> noteIds, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         return await connection.ExecuteScalarAsync<int>(new CommandDefinition($"""
@@ -165,7 +163,7 @@ public sealed class SharesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>Notes other people have shared with the caller, most recently updated first.</summary>
-    public async Task<PagedResult<SharedNoteDto>> SharedWithMeAsync(ICurrentUser user, int page, int pageSize, CancellationToken ct)
+    public async Task<PagedResult<SharedNoteDto>> SharedWithMeAsync(DatabaseUser user, int page, int pageSize, CancellationToken ct)
     {
         const string mine = $"FROM note_shares s WHERE s.note_id = n.id AND {NotesRepository.IsRecipient}";
         const string filter = $"FROM notes n WHERE n.owner_id <> @UserId AND EXISTS (SELECT 1 {mine})";

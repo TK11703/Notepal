@@ -2,7 +2,7 @@ using Dapper;
 using Npgsql;
 using Notepal.Shared;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
 public sealed class PageWork
 {

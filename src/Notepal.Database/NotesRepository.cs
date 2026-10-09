@@ -1,10 +1,8 @@
 using Dapper;
 using Npgsql;
-using Notepal.Api.Auth;
-using Notepal.Api.Endpoints;
 using Notepal.Shared;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
 public sealed record NewPage(string FileName, string ContentType, byte[] Data);
 
@@ -60,7 +58,7 @@ internal class NoteSummaryRow
     public NoteSummaryDto ToDto()
     {
         var statuses = Statuses.Select(s => (ProcessingStatus)s).ToList();
-        return new NoteSummaryDto(Id, Title, CreatedAt, UpdatedAt, statuses.Count, Mapping.AggregateStatus(statuses), Preview, Tags);
+        return new NoteSummaryDto(Id, Title, CreatedAt, UpdatedAt, statuses.Count, DatabaseMapping.AggregateStatus(statuses), Preview, Tags);
     }
 }
 
@@ -88,7 +86,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         $"(n.owner_id = @UserId OR EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND s.permission = {(int)SharePermission.Contributor} AND {IsRecipient}))";
 
     /// <summary>Resolves the caller's access to a note, or <c>null</c> when the note does not exist or is not visible to them.</summary>
-    public async Task<NoteAccess?> GetAccessAsync(Guid noteId, ICurrentUser user, CancellationToken ct)
+    public async Task<NoteAccess?> GetAccessAsync(Guid noteId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var rows = (await connection.QueryAsync<AccessRow>(new CommandDefinition($"""
@@ -155,7 +153,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         return new NoteStatsDto(notes, pages);
     }
 
-    public async Task<NoteDto?> GetNoteAsync(Guid noteId, ICurrentUser user, NoteAccess access, CancellationToken ct)
+    public async Task<NoteDto?> GetNoteAsync(Guid noteId, DatabaseUser user, NoteAccess access, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""
@@ -196,7 +194,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         return note.ToDto(pages);
     }
 
-    public async Task<NoteDto?> RenameNoteAsync(Guid noteId, ICurrentUser user, NoteAccess access, string title, CancellationToken ct)
+    public async Task<NoteDto?> RenameNoteAsync(Guid noteId, DatabaseUser user, NoteAccess access, string title, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var updated = await connection.ExecuteAsync(new CommandDefinition(
@@ -206,7 +204,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         return updated == 0 ? null : await GetNoteAsync(noteId, user, access, ct);
     }
 
-    public async Task<NoteDto?> SetTagsAsync(Guid noteId, ICurrentUser user, NoteAccess access, IEnumerable<string> tags, CancellationToken ct)
+    public async Task<NoteDto?> SetTagsAsync(Guid noteId, DatabaseUser user, NoteAccess access, IEnumerable<string> tags, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var updated = await connection.ExecuteAsync(new CommandDefinition(
@@ -217,7 +215,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>Appends pages at the end of a note. Pages always belong to the note's owner, also when a contributor adds them.</summary>
-    public async Task<AddPagesResult> AddPagesAsync(Guid noteId, ICurrentUser user, NoteAccess access, IReadOnlyList<NewPage> files, CancellationToken ct)
+    public async Task<AddPagesResult> AddPagesAsync(Guid noteId, DatabaseUser user, NoteAccess access, IReadOnlyList<NewPage> files, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
         await using var connection = await db.OpenConnectionAsync(ct);
@@ -255,16 +253,16 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>Deletes a page and renumbers the remaining ones. The last page of a note can't be deleted.</summary>
-    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> DeletePageAsync(Guid noteId, Guid pageId, ICurrentUser user, NoteAccess access, CancellationToken ct) =>
+    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> DeletePageAsync(Guid noteId, Guid pageId, DatabaseUser user, NoteAccess access, CancellationToken ct) =>
         ChangePageAsync(noteId, pageId, null, user, access, ct);
 
     /// <summary>Moves a page to <paramref name="pageNumber"/> (clamped to the note's pages) and renumbers the others.</summary>
-    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> MovePageAsync(Guid noteId, Guid pageId, int pageNumber, ICurrentUser user, NoteAccess access, CancellationToken ct) =>
+    public Task<(PageChangeOutcome Outcome, NoteDto? Note)> MovePageAsync(Guid noteId, Guid pageId, int pageNumber, DatabaseUser user, NoteAccess access, CancellationToken ct) =>
         ChangePageAsync(noteId, pageId, pageNumber, user, access, ct);
 
     /// <summary>Deletes (<paramref name="moveTo"/> is <c>null</c>) or moves a page, then numbers all pages 1..n.</summary>
     private async Task<(PageChangeOutcome Outcome, NoteDto? Note)> ChangePageAsync(
-        Guid noteId, Guid pageId, int? moveTo, ICurrentUser user, NoteAccess access, CancellationToken ct)
+        Guid noteId, Guid pageId, int? moveTo, DatabaseUser user, NoteAccess access, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -322,7 +320,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     /// both notes. Returns the source note.
     /// </summary>
     public async Task<(PageChangeOutcome Outcome, NoteDto? Note)> TransferPageAsync(
-        Guid noteId, Guid pageId, Guid targetNoteId, ICurrentUser user, NoteAccess access, CancellationToken ct)
+        Guid noteId, Guid pageId, Guid targetNoteId, DatabaseUser user, NoteAccess access, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
@@ -396,7 +394,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
             new { NoteId = noteId, OwnerId = ownerId }, cancellationToken: ct)) > 0;
     }
 
-    public async Task<PageOriginal?> GetOriginalAsync(Guid noteId, Guid pageId, ICurrentUser user, CancellationToken ct)
+    public async Task<PageOriginal?> GetOriginalAsync(Guid noteId, Guid pageId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         return await connection.QuerySingleOrDefaultAsync<PageOriginal>(new CommandDefinition($"""
@@ -408,7 +406,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
             """, new { PageId = pageId, NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
     }
 
-    public async Task<PageDto?> UpdatePageTextAsync(Guid noteId, Guid pageId, ICurrentUser user, string text, CancellationToken ct)
+    public async Task<PageDto?> UpdatePageTextAsync(Guid noteId, Guid pageId, DatabaseUser user, string text, CancellationToken ct)
     {
         // Saving text identical to the extraction clears the correction so future re-processing shows through.
         await using var connection = await db.OpenConnectionAsync(ct);
@@ -431,7 +429,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     }
 
     public async Task<(ReprocessOutcome Outcome, PageDto? Page)> ResetForReprocessingAsync(
-        Guid noteId, Guid pageId, ICurrentUser user, CancellationToken ct)
+        Guid noteId, Guid pageId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""

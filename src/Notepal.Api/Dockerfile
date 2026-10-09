@@ -4,6 +4,7 @@ WORKDIR /src
 COPY global.json Directory.Packages.props ./
 COPY src/Notepal.Shared/Notepal.Shared.csproj src/Notepal.Shared/
 COPY src/Notepal.ServiceDefaults/Notepal.ServiceDefaults.csproj src/Notepal.ServiceDefaults/
+COPY src/Notepal.Database/Notepal.Database.csproj src/Notepal.Database/
 COPY src/Notepal.Api/Notepal.Api.csproj src/Notepal.Api/
 RUN dotnet restore src/Notepal.Api/Notepal.Api.csproj
 COPY src/ src/

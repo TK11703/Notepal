@@ -46,7 +46,8 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
                                    ▼  (internal ingress only, bearer token)
                                Notepal.Api  (ASP.NET Core 10 minimal API)
                                    │                     │
-                         Npgsql (plain SQL)        Azure AI Foundry model (chat completions)
+                         Notepal.Database          Azure AI Foundry model (chat completions)
+                         Dapper + Npgsql
                      (managed identity, Entra ID)        (managed identity)
                                    ▼
                 PostgreSQL Flexible Server (shared)
@@ -55,12 +56,21 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
 | Project | Purpose |
 | --- | --- |
 | `src/Notepal.Web` | Blazor Web App: sign-in, upload/camera, viewer/editor, search, theme. Proxies original files from the API. |
-| `src/Notepal.Api` | Minimal API with built-in validation, plain SQL data access (Npgsql) + embedded SQL migrations (`Data/Migrations/*.sql`), upload validation (extension **and** file signature), background text extraction, search. |
+| `src/Notepal.Api` | Minimal API with built-in validation, authentication and authorization, upload validation (extension **and** file signature), background text extraction, search orchestration. Calls repositories from `Notepal.Database`. |
+| `src/Notepal.Database` | Class library for Dapper repositories, PostgreSQL connections and managed-identity authentication, database models/projections, and embedded SQL migrations (`Migrations/*.sql`). |
 | `src/Notepal.AppHost` | Aspire AppHost: runs PostgreSQL (container + data volume), the API and the web app together with the Aspire dashboard. |
 | `src/Notepal.ServiceDefaults` | Shared Aspire defaults: OpenTelemetry, health checks, service discovery. |
 | `src/Notepal.Shared` | DTOs (with validation attributes) and limits shared by both apps. |
 | `tests/Notepal.Api.Tests` | Integration tests (WebApplicationFactory + Testcontainers PostgreSQL) incl. cross-user isolation. |
 | `infra/` | Bicep for Azure and the Entra ID setup script. |
+
+The API references Database and Shared; Database references only Shared, never API or Web.
+`builder.AddNotepalDatabase()` registers the data source, Dapper mappings, migrator and repositories.
+The API still controls startup migration execution through `Database:MigrateOnStartup`.
+Connection settings (`ConnectionStrings:notepal` and `Database:ManagedIdentityClientId`) are unchanged.
+Claims and HTTP authorization responses stay in the API; repositories receive a plain `DatabaseUser`
+and retain ownership and sharing predicates in SQL. Migration resource names and versions are unchanged
+so existing databases keep their migration history. Shared contracts remain in `Notepal.Shared` for now.
 
 ### API
 

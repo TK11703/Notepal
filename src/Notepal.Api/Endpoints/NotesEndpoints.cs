@@ -2,8 +2,8 @@ using System.Net.Mime;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using Notepal.Api.Auth;
-using Notepal.Api.Data;
 using Notepal.Api.Processing;
+using Notepal.Database;
 using Notepal.Shared;
 
 namespace Notepal.Api.Endpoints;
@@ -46,8 +46,8 @@ public static class NotesEndpoints
 
     private static async Task<IResult> GetNote(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
-        var access = await notes.GetAccessAsync(noteId, user, ct);
-        var note = access is null ? null : await notes.GetNoteAsync(noteId, user, access, ct);
+        var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
+        var note = access is null ? null : await notes.GetNoteAsync(noteId, user.ToDatabaseUser(), access, ct);
         return note is null ? Results.NotFound() : Results.Ok(note);
     }
 
@@ -116,7 +116,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var note = await notes.RenameNoteAsync(noteId, user, access, title, ct);
+        var note = await notes.RenameNoteAsync(noteId, user.ToDatabaseUser(), access, title, ct);
         return note is null ? Results.NotFound() : Results.Ok(note);
     }
 
@@ -134,7 +134,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var note = await notes.SetTagsAsync(noteId, user, access, tags, ct);
+        var note = await notes.SetTagsAsync(noteId, user.ToDatabaseUser(), access, tags, ct);
         return note is null ? Results.NotFound() : Results.Ok(note);
     }
 
@@ -163,7 +163,7 @@ public static class NotesEndpoints
             return FilesProblem([.. errors]);
         }
 
-        var result = await notes.AddPagesAsync(noteId, user, access, pages, ct);
+        var result = await notes.AddPagesAsync(noteId, user.ToDatabaseUser(), access, pages, ct);
         switch (result.Outcome)
         {
             case AddPagesOutcome.NotFound:
@@ -190,12 +190,12 @@ public static class NotesEndpoints
         }
 
         // People a note is shared with can see it, but only its owner can delete it.
-        return await notes.GetAccessAsync(noteId, user, ct) is null ? Results.NotFound() : NoteAccess.OwnerOnly("delete it");
+        return await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct) is null ? Results.NotFound() : NoteAccessResults.OwnerOnly("delete it");
     }
 
     private static async Task<IResult> GetOriginal(Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, HttpContext http, CancellationToken ct)
     {
-        var original = await notes.GetOriginalAsync(noteId, pageId, user, ct);
+        var original = await notes.GetOriginalAsync(noteId, pageId, user.ToDatabaseUser(), ct);
         if (original is null)
         {
             return Results.NotFound();
@@ -220,7 +220,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var page = await notes.UpdatePageTextAsync(noteId, pageId, user, body.Text, ct);
+        var page = await notes.UpdatePageTextAsync(noteId, pageId, user.ToDatabaseUser(), body.Text, ct);
         return page is null ? Results.NotFound() : Results.Ok(page);
     }
 
@@ -232,7 +232,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var (outcome, page) = await notes.ResetForReprocessingAsync(noteId, pageId, user, ct);
+        var (outcome, page) = await notes.ResetForReprocessingAsync(noteId, pageId, user.ToDatabaseUser(), ct);
         switch (outcome)
         {
             case ReprocessOutcome.NotFound:
@@ -253,7 +253,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var (outcome, note) = await notes.DeletePageAsync(noteId, pageId, user, access, ct);
+        var (outcome, note) = await notes.DeletePageAsync(noteId, pageId, user.ToDatabaseUser(), access, ct);
         return outcome switch
         {
             PageChangeOutcome.LastPage => Results.Conflict(new { message = "A note needs at least one page. Delete the note instead." }),
@@ -270,7 +270,7 @@ public static class NotesEndpoints
             return denied;
         }
 
-        var (outcome, note) = await notes.MovePageAsync(noteId, pageId, body.PageNumber, user, access, ct);
+        var (outcome, note) = await notes.MovePageAsync(noteId, pageId, body.PageNumber, user.ToDatabaseUser(), access, ct);
         return outcome == PageChangeOutcome.Changed ? Results.Ok(note) : Results.NotFound();
     }
 
@@ -282,7 +282,7 @@ public static class NotesEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["targetNoteId"] = ["Choose a different note."] });
         }
 
-        var access = await notes.GetAccessAsync(noteId, user, ct);
+        var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
         if (access is null)
         {
             return Results.NotFound();
@@ -291,10 +291,10 @@ public static class NotesEndpoints
         // Pages belong to the note's owner, so only the owner can move them between notes.
         if (access.Role != NoteRole.Owner)
         {
-            return NoteAccess.OwnerOnly("move its pages to another note");
+            return NoteAccessResults.OwnerOnly("move its pages to another note");
         }
 
-        var (outcome, note) = await notes.TransferPageAsync(noteId, pageId, body.TargetNoteId, user, access, ct);
+        var (outcome, note) = await notes.TransferPageAsync(noteId, pageId, body.TargetNoteId, user.ToDatabaseUser(), access, ct);
         return outcome switch
         {
             PageChangeOutcome.Changed => Results.Ok(note),
@@ -311,10 +311,10 @@ public static class NotesEndpoints
     /// <summary>Resolves the caller's access when they own the note or are a contributor on it; otherwise returns the error result.</summary>
     private static async Task<(NoteAccess? Access, IResult Denied)> RequireEditableAsync(NotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
     {
-        var access = await notes.GetAccessAsync(noteId, user, ct);
+        var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
         return access is null ? (null, Results.NotFound())
             : access.CanEdit ? (access, Results.Empty)
-            : (null, NoteAccess.ReadOnly());
+            : (null, NoteAccessResults.ReadOnly());
     }
 
     /// <summary>Validates uploaded files (size, extension and signature).</summary>

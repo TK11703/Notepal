@@ -1,10 +1,11 @@
 using System.Reflection;
 using Dapper;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Notepal.Api.Data;
+namespace Notepal.Database;
 
-/// <summary>Applies the embedded <c>Data/Migrations/*.sql</c> scripts in name order, each exactly once.</summary>
+/// <summary>Applies the embedded <c>Migrations/*.sql</c> scripts in name order, each exactly once.</summary>
 public sealed class DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<DatabaseMigrator> logger)
 {
     private const string ResourcePrefix = "migrations/";
