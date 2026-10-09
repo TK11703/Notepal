@@ -4,7 +4,7 @@
     <Project Path="src/Notepal.AppHost/Notepal.AppHost.csproj" />
     <Project Path="src/Notepal.Database/Notepal.Database.csproj" />
     <Project Path="src/Notepal.ServiceDefaults/Notepal.ServiceDefaults.csproj" />
-    <Project Path="src/Notepal.Shared/Notepal.Shared.csproj" />
+    <Project Path="src/Notepal.Contracts/Notepal.Contracts.csproj" />
     <Project Path="src/Notepal.Web/Notepal.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

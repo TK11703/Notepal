@@ -1,6 +1,6 @@
 using Dapper;
 using Npgsql;
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Database;
 

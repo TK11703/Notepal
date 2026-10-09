@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
-using Notepal.Shared;
+using Notepal.Contracts;
 using NewNote = web::Notepal.Web.Components.Pages.NewNote;
 
 namespace Notepal.Api.Tests;

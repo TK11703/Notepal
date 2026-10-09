@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Notepal.Shared\Notepal.Shared.csproj" />
+    <ProjectReference Include="..\Notepal.Contracts\Notepal.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

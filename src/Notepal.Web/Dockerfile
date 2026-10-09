@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY global.json Directory.Packages.props ./
-COPY src/Notepal.Shared/Notepal.Shared.csproj src/Notepal.Shared/
+COPY src/Notepal.Contracts/Notepal.Contracts.csproj src/Notepal.Contracts/
 COPY src/Notepal.ServiceDefaults/Notepal.ServiceDefaults.csproj src/Notepal.ServiceDefaults/
 COPY src/Notepal.Web/Notepal.Web.csproj src/Notepal.Web/
 RUN dotnet restore src/Notepal.Web/Notepal.Web.csproj

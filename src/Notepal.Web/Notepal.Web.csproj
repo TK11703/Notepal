@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-    <ProjectReference Include="..\Notepal.Shared\Notepal.Shared.csproj" />
+    <ProjectReference Include="..\Notepal.Contracts\Notepal.Contracts.csproj" />
     <ProjectReference Include="..\Notepal.ServiceDefaults\Notepal.ServiceDefaults.csproj" />
   </ItemGroup>
 

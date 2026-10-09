@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using Notepal.Shared;
+using Notepal.Contracts;
 using static Notepal.Api.Tests.NotesApiTests;
 
 namespace Notepal.Api.Tests;

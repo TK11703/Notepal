@@ -1,9 +1,9 @@
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Database;
 
 /// <summary>Row of the <c>notes</c> table.</summary>
-public sealed class Note
+internal sealed class Note
 {
     public Guid Id { get; set; }
 
@@ -19,7 +19,7 @@ public sealed class Note
 }
 
 /// <summary>Row of the <c>note_shares</c> table: grants another person access to a note. Only the note's owner can create, change or remove shares.</summary>
-public sealed class NoteShare
+internal sealed class NoteShare
 {
     public Guid Id { get; set; }
     public Guid NoteId { get; set; }
@@ -44,7 +44,7 @@ public sealed class NoteShare
 }
 
 /// <summary>Row of the <c>pages</c> table: a captured artifact (photo, image, PDF or Word document) of a note.</summary>
-public sealed class Page
+internal sealed class Page
 {
     public Guid Id { get; set; }
     public Guid NoteId { get; set; }
@@ -69,7 +69,7 @@ public sealed class Page
 }
 
 /// <summary>Row of the <c>page_contents</c> table: the original uploaded bytes.</summary>
-public sealed class PageContent
+internal sealed class PageContent
 {
     public Guid PageId { get; set; }
     public byte[] Data { get; set; } = null!;

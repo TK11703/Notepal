@@ -60,22 +60,42 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
 | `src/Notepal.Database` | Class library for Dapper repositories, PostgreSQL connections and managed-identity authentication, database models/projections, and embedded SQL migrations (`Migrations/*.sql`). |
 | `src/Notepal.AppHost` | Aspire AppHost: runs PostgreSQL (container + data volume), the API and the web app together with the Aspire dashboard. |
 | `src/Notepal.ServiceDefaults` | Shared Aspire defaults: OpenTelemetry, health checks, service discovery. |
-| `src/Notepal.Shared` | DTOs (with validation attributes) and limits shared by both apps. |
+| `src/Notepal.Contracts` | Request/response DTOs, validation attributes, enums and shared input limits/normalization. No dependency on API, Web or Database. |
 | `tests/Notepal.Api.Tests` | Integration tests (WebApplicationFactory + Testcontainers PostgreSQL) incl. cross-user isolation. |
 | `infra/` | Bicep for Azure and the Entra ID setup script. |
 
-The API references Database and Shared; Database references only Shared, never API or Web.
+Contracts are grouped into `Notes`, `Pages`, `Tags`, `Sharing`, `Search`, `Uploads` and `Common`
+directories. Public types retain the `Notepal.Contracts` namespace; validation attributes,
+normalization rules and JSON shapes are unchanged.
+
+The API references Database and Contracts; Database references only Contracts, never API or Web.
 `builder.AddNotepalDatabase()` registers the data source, Dapper mappings, migrator and repositories.
 The API still controls startup migration execution through `Database:MigrateOnStartup`.
 Connection settings (`ConnectionStrings:notepal` and `Database:ManagedIdentityClientId`) are unchanged.
 Claims and HTTP authorization responses stay in the API; repositories receive a plain `DatabaseUser`
 and retain ownership and sharing predicates in SQL. Migration resource names and versions are unchanged
-so existing databases keep their migration history. Shared contracts remain in `Notepal.Shared` for now.
+so existing databases keep their migration history.
+
+API use cases are vertical slices under `Features/Notes`, `Features/Tags`, `Features/Sharing`
+and `Features/Search`. Each operation has its own directory, for example
+`Features/Notes/AddPages/AddPagesEndpoint.cs` and `AddPagesValidator.cs`.
+The endpoint owns route registration and orchestration; operation-specific validation lives alongside it
+in a validator when needed. Contract attributes remain enforced by .NET 10 validation, without duplicate validators.
+feature registration classes only assemble routes. Reused HTTP authorization and pagination helpers
+live in `Features/Common`, and upload validation is shared by the note creation/append slices.
+SQL, transactions and database-dependent invariants (such as concurrent page/share limits) stay in Database.
+Repositories project internal database rows into Contracts DTOs; neither API responses nor Web depend on row entities.
 
 ### API
 
 All endpoints (except `/healthz`) require a token with the `access_as_user` scope. Invalid input returns `400` with a
 validation problem details body.
+
+Request DTO attributes are enforced by .NET 10 Minimal API validation before handlers execute.
+Slices validate and normalize form/query input before repository calls. Null tag collections and empty
+transfer target IDs return `400`; an empty tag array still clears tags, and empty corrected text is valid.
+Uploads are validated before note lookup, so invalid uploads return `400` even for missing/read-only notes.
+Numeric enum serialization and existing route URLs are unchanged.
 
 | Method & route | Description |
 | --- | --- |

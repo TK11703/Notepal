@@ -1,6 +1,6 @@
 using Dapper;
 using Npgsql;
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Database;
 
@@ -23,17 +23,17 @@ public sealed class SharesRepository(NpgsqlDataSource db)
     private const string ShareColumns =
         "s.id, s.note_id, s.owner_id, s.owner_name, s.owner_email, s.recipient_id, s.recipient_email, s.recipient_name, s.permission, s.created_at";
 
-    public async Task<List<NoteShare>> ListSharesAsync(string ownerId, Guid noteId, CancellationToken ct)
+    public async Task<List<NoteShareDto>> ListSharesAsync(string ownerId, Guid noteId, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var shares = await connection.QueryAsync<NoteShare>(new CommandDefinition(
             $"SELECT {ShareColumns} FROM note_shares s WHERE s.note_id = @NoteId AND s.owner_id = @OwnerId ORDER BY s.created_at",
             new { NoteId = noteId, OwnerId = ownerId }, cancellationToken: ct));
-        return shares.AsList();
+        return shares.Select(s => s.ToDto()).ToList();
     }
 
     /// <summary>Shares a note; sharing with someone again (by address or by directory id) updates their existing share.</summary>
-    public async Task<(UpsertShareOutcome Outcome, NoteShare? Share)> UpsertShareAsync(
+    public async Task<(UpsertShareOutcome Outcome, NoteShareDto? Share)> UpsertShareAsync(
         string ownerId, Guid noteId, ShareDetails details, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
@@ -85,17 +85,18 @@ public sealed class SharesRepository(NpgsqlDataSource db)
             """, share, transaction, cancellationToken: ct));
 
         await transaction.CommitAsync(ct);
-        return (created ? UpsertShareOutcome.Created : UpsertShareOutcome.Updated, share);
+        return (created ? UpsertShareOutcome.Created : UpsertShareOutcome.Updated, share.ToDto());
     }
 
-    public async Task<NoteShare?> UpdatePermissionAsync(string ownerId, Guid noteId, Guid shareId, SharePermission permission, CancellationToken ct)
+    public async Task<NoteShareDto?> UpdatePermissionAsync(string ownerId, Guid noteId, Guid shareId, SharePermission permission, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        return await connection.QuerySingleOrDefaultAsync<NoteShare>(new CommandDefinition($"""
+        var share = await connection.QuerySingleOrDefaultAsync<NoteShare>(new CommandDefinition($"""
             UPDATE note_shares s SET permission = @Permission
              WHERE s.id = @ShareId AND s.note_id = @NoteId AND s.owner_id = @OwnerId
             RETURNING {ShareColumns}
             """, new { ShareId = shareId, NoteId = noteId, OwnerId = ownerId, Permission = permission }, cancellationToken: ct));
+        return share?.ToDto();
     }
 
     /// <summary>The owner removes someone; a recipient may also remove their own share to leave a note.</summary>

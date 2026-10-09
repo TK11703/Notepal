@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Notepal.Api.Auth;
+using Notepal.Api.Features.Common;
 using Notepal.Database;
-using Notepal.Shared;
+using Notepal.Contracts;
 
-namespace Notepal.Api.Endpoints;
+namespace Notepal.Api.Features.Search.SearchNotes;
 
-public static class SearchEndpoints
+internal static class SearchNotesEndpoint
 {
     /// <summary>Markers wrapped around matched terms in snippets. Clients HTML-encode the snippet and render these as highlights.</summary>
     public const string HighlightStart = "\u27E6";
@@ -14,11 +15,8 @@ public static class SearchEndpoints
     private static readonly string HeadlineOptions =
         $"StartSel={HighlightStart}, StopSel={HighlightEnd}, MaxWords=35, MinWords=15, MaxFragments=2, FragmentDelimiter=\" … \"";
 
-    public static RouteGroupBuilder MapSearchEndpoints(this RouteGroupBuilder api)
-    {
-        api.MapGet("/search", Search).WithTags("Search");
-        return api;
-    }
+    public static void Map(RouteGroupBuilder api) =>
+        api.MapGet("/search", Search).WithTags("Search").Produces<PagedResult<SearchResultDto>>();
 
     private static async Task<IResult> Search(string? q, NotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {

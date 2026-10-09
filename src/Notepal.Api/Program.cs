@@ -4,11 +4,14 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Identity.Web;
 using Notepal.Api.Auth;
-using Notepal.Api.Endpoints;
+using Notepal.Api.Features.Notes;
+using Notepal.Api.Features.Search;
+using Notepal.Api.Features.Sharing;
+using Notepal.Api.Features.Tags;
 using Notepal.Api.Ocr;
 using Notepal.Api.Processing;
 using Notepal.Database;
-using Notepal.Shared;
+using Notepal.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,6 +88,7 @@ app.MapDefaultEndpoints();
 app.MapGroup("/api")
     .RequireAuthorization("NotesUser")
     .MapNotesEndpoints()
+    .MapTagsEndpoints()
     .MapSharingEndpoints()
     .MapSearchEndpoints();
 

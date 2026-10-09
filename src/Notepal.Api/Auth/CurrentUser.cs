@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.Identity.Web;
 using Notepal.Database;
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Api.Auth;
 

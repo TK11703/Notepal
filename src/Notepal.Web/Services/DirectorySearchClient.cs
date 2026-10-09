@@ -3,7 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Identity.Abstractions;
 using Microsoft.Identity.Web;
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Web.Services;
 

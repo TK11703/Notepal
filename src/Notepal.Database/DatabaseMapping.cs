@@ -1,8 +1,8 @@
-using Notepal.Shared;
+using Notepal.Contracts;
 
 namespace Notepal.Database;
 
-public static class DatabaseMapping
+internal static class DatabaseMapping
 {
     public static PageDto ToDto(this Page page) => new(
         page.Id,
