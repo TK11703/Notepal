@@ -65,6 +65,48 @@ public sealed class NotesApiTests(NotepalApiFactory factory) : IClassFixture<Not
         Assert.Contains("Krebs cycle", note.Pages.Single(p => p.FileName == "summary.docx").Text);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Six_images_keep_their_originals_and_ocr_text_on_the_matching_pages(bool append)
+    {
+        var client = factory.CreateClientFor(NewUser());
+        var files = Enumerable.Range(1, 6)
+            .Select(i => (Name: $"page-{i}.png", Data: TestFiles.Png.Concat(new[] { (byte)i }).ToArray()))
+            .ToArray();
+        NoteDto created;
+        if (append)
+        {
+            created = await WaitForProcessingAsync(client,
+                (await UploadAsync(client, "Existing", ("existing.png", TestFiles.Png))).Id);
+            using var content = new MultipartFormDataContent();
+            foreach (var (name, data) in files)
+            {
+                content.Add(new ByteArrayContent(data), "files", name);
+            }
+            var response = await client.PostAsync($"/api/notes/{created.Id}/pages", content);
+            response.EnsureSuccessStatusCode();
+        }
+        else
+        {
+            created = await UploadAsync(client, "Six pages", files);
+        }
+
+        var note = await WaitForProcessingAsync(client, created.Id);
+        Assert.Equal(ProcessingStatus.Completed, note.Status);
+        Assert.Equal(append ? 7 : 6, note.Pages.Count);
+        for (var i = 0; i < files.Length; i++)
+        {
+            var page = Assert.Single(note.Pages, p => p.FileName == files[i].Name);
+            Assert.Equal(i + (append ? 2 : 1), page.PageNumber);
+            Assert.Equal($"Handwritten photosynthesis lecture notes from {files[i].Name}", page.ExtractedText);
+            Assert.Equal(page.ExtractedText, page.Text);
+            var original = await client.GetAsync($"/api/notes/{note.Id}/pages/{page.Id}/original");
+            original.EnsureSuccessStatusCode();
+            Assert.Equal(files[i].Data, await original.Content.ReadAsByteArrayAsync());
+        }
+    }
+
     [Fact]
     public async Task Files_whose_content_does_not_match_the_extension_are_rejected()
     {

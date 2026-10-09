@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Notepal.Api.Tests" />
     <EmbeddedResource Include="Data\Migrations\*.sql" LogicalName="migrations/%(Filename)%(Extension)" />
   </ItemGroup>
 

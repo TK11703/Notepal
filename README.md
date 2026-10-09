@@ -17,6 +17,7 @@ side by side, and search everything you have captured. Every user only ever sees
 - **AI OCR**: images (and scanned PDF pages) are sent inline to a Foundry model deployment (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
   background queue and resumes automatically after a restart.
+  Each page's OCR request uses isolated request options, so concurrent extractions cannot overwrite another page's image payload.
 - **Review & correct**: each page has a view switcher for **Original**, **Notes** and **Side by side** (the original stays pinned while you scroll long notes; your choice is remembered per browser). Corrections are stored
   separately from the AI text, so you can revert or re-run extraction at any time.
 - **Tags**: tag each note (on upload or later), with one-click suggestions from tags you have used before. Tags are

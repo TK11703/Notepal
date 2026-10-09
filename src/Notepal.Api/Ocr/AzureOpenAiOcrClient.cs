@@ -11,7 +11,8 @@ namespace Notepal.Api.Ocr;
 public sealed class AzureOpenAiOcrClient : IOcrClient
 {
     private readonly ChatClient _chat;
-    private readonly ChatCompletionOptions _completionOptions = new() { Temperature = 0 };
+
+    internal AzureOpenAiOcrClient(ChatClient chat) => _chat = chat;
 
     public AzureOpenAiOcrClient(IOptions<OcrOptions> options, IHostEnvironment environment)
     {
@@ -36,7 +37,9 @@ public sealed class AzureOpenAiOcrClient : IOcrClient
                 ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(image), contentType, ChatImageDetailLevel.High)),
         ];
 
-        ClientResult<ChatCompletion> result = await _chat.CompleteChatAsync(messages, _completionOptions, cancellationToken);
+        // The SDK writes request messages into options, so concurrent pages must not share them.
+        var completionOptions = new ChatCompletionOptions { Temperature = 0 };
+        ClientResult<ChatCompletion> result = await _chat.CompleteChatAsync(messages, completionOptions, cancellationToken);
         var completion = result.Value;
         if (completion.FinishReason == ChatFinishReason.ContentFilter)
         {
