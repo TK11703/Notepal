@@ -70,6 +70,7 @@ else
 
 <div class="row g-4">
     <div class="col-lg-7">
+        <fieldset disabled="@(preparingFiles || Busy)">
         <div class="@(source == Source.Upload ? null : "d-none")">
             <div class="dropzone">
                 <span class="feature-icon"><Icon Name="cloud-arrow-up" /></span>
@@ -85,18 +86,31 @@ else
             <label class="form-label" for="device-camera">Or use your device's camera app</label>
             <InputFile id="device-camera" class="form-control" accept="image/*" capture="environment" OnChange="OnFilesSelectedAsync" />
         </div>
+        </fieldset>
     </div>
 
     <div class="col-lg-5">
         <div class="card card-body">
         <h2 class="h6 d-flex justify-content-between">@(Adding ? "New pages" : "Pages") <span class="text-body-secondary fw-normal">@items.Count / @MaxPages</span></h2>
-        @if (items.Count == 0)
+        <div role="status" aria-live="polite" aria-atomic="true">
+            @if (preparingFiles)
+            {
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="spinner-border spinner-border-sm flex-shrink-0" aria-hidden="true"></span>
+                    <div class="small">
+                        <div>Preparing file @preparingFileNumber of @preparingFileCount: @preparingFileName</div>
+                        <div class="text-body-secondary">Reading files and creating previews. @(Adding ? "Pages are added" : "The note is saved") only after you click @(Adding ? "Add pages" : "Save note").</div>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (items.Count == 0 && !preparingFiles)
         {
             <p class="text-body-secondary small">
                 Nothing added yet. Each file or photo becomes a page of the note, in this order@(Adding ? $", starting at page {NextPageNumber}" : null).
             </p>
         }
-        else
+        else if (items.Count > 0)
         {
             <ol class="list-group list-group-numbered mb-3">
                 @foreach (var item in items)
@@ -114,13 +128,13 @@ else
                             <div class="text-truncate">@item.FileName</div>
                             <small class="text-body-secondary">@FormatSize(item.Data.Length)</small>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Remove @item.FileName" title="Remove" @onclick="() => RemoveAsync(item)"><Icon Name="x-lg" /></button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(preparingFiles || Busy)" aria-label="Remove @item.FileName" title="Remove" @onclick="() => RemoveAsync(item)"><Icon Name="x-lg" /></button>
                     </li>
                 }
             </ol>
         }
 
-        <button type="button" class="btn btn-primary w-100" disabled="@(items.Count == 0 || Busy)" @onclick="SaveAsync">
+        <button type="button" class="btn btn-primary w-100" disabled="@(items.Count == 0 || Busy || preparingFiles)" @onclick="SaveAsync">
             @if (Busy)
             {
                 <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
@@ -154,6 +168,10 @@ else
     private int photoCounter;
     private NoteDto? existing;
     private bool notFound;
+    private bool preparingFiles;
+    private int preparingFileNumber;
+    private int preparingFileCount;
+    private string? preparingFileName;
 
     /// <summary>Set when adding pages to an existing note instead of creating a new one.</summary>
     [Parameter] public Guid? NoteId { get; set; }
@@ -175,58 +193,83 @@ else
 
     private async Task OnFilesSelectedAsync(InputFileChangeEventArgs e)
     {
-        ErrorMessage = null;
-        var problems = new List<string>();
-
-        foreach (var file in e.GetMultipleFiles(UploadLimits.MaxFilesPerNote))
+        if (preparingFiles || Busy)
         {
-            if (items.Count >= MaxPages)
-            {
-                problems.Add(LimitMessage);
-                break;
-            }
-
-            var extension = Path.GetExtension(file.Name);
-            if (!UploadLimits.AllowedTypes.TryGetValue(extension, out var contentType))
-            {
-                problems.Add($"'{file.Name}' is not a supported file type.");
-                continue;
-            }
-
-            if (file.Size == 0 || file.Size > UploadLimits.MaxFileBytes)
-            {
-                problems.Add($"'{file.Name}' must be smaller than {UploadLimits.MaxFileBytes / 1024 / 1024} MB.");
-                continue;
-            }
-
-            try
-            {
-                // Read immediately: browser file references become invalid once the input's selection changes.
-                await using var stream = file.OpenReadStream(UploadLimits.MaxFileBytes);
-                using var buffer = new MemoryStream();
-                await stream.CopyToAsync(buffer);
-
-                string? thumbnail = null;
-                if (contentType.StartsWith("image/", StringComparison.Ordinal))
-                {
-                    var resized = await file.RequestImageFileAsync("image/jpeg", 128, 128);
-                    await using var thumbStream = resized.OpenReadStream(UploadLimits.MaxFileBytes);
-                    using var thumbBuffer = new MemoryStream();
-                    await thumbStream.CopyToAsync(thumbBuffer);
-                    thumbnail = $"data:image/jpeg;base64,{Convert.ToBase64String(thumbBuffer.ToArray())}";
-                }
-
-                items.Add(new PendingFile(file.Name, contentType, buffer.ToArray(), thumbnail, null));
-            }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
-            {
-                problems.Add($"Could not read '{file.Name}': {ex.Message}");
-            }
+            return;
         }
 
-        if (problems.Count > 0)
+        ErrorMessage = null;
+        if (e.FileCount > UploadLimits.MaxFilesPerNote)
         {
-            ErrorMessage = string.Join(" ", problems.Distinct());
+            ErrorMessage = LimitMessage;
+            return;
+        }
+
+        var problems = new List<string>();
+        preparingFiles = true;
+        preparingFileNumber = 0;
+        preparingFileCount = e.FileCount;
+        try
+        {
+            foreach (var file in e.GetMultipleFiles(UploadLimits.MaxFilesPerNote))
+            {
+                if (items.Count >= MaxPages)
+                {
+                    problems.Add(LimitMessage);
+                    break;
+                }
+
+                preparingFileNumber++;
+                preparingFileName = file.Name;
+                StateHasChanged();
+
+                var extension = Path.GetExtension(file.Name);
+                if (!UploadLimits.AllowedTypes.TryGetValue(extension, out var contentType))
+                {
+                    problems.Add($"'{file.Name}' is not a supported file type.");
+                    continue;
+                }
+
+                if (file.Size == 0 || file.Size > UploadLimits.MaxFileBytes)
+                {
+                    problems.Add($"'{file.Name}' must be smaller than {UploadLimits.MaxFileBytes / 1024 / 1024} MB.");
+                    continue;
+                }
+
+                try
+                {
+                    // Read immediately: browser file references become invalid once the input's selection changes.
+                    await using var stream = file.OpenReadStream(UploadLimits.MaxFileBytes);
+                    using var buffer = new MemoryStream();
+                    await stream.CopyToAsync(buffer);
+
+                    string? thumbnail = null;
+                    if (contentType.StartsWith("image/", StringComparison.Ordinal))
+                    {
+                        var resized = await file.RequestImageFileAsync("image/jpeg", 128, 128);
+                        await using var thumbStream = resized.OpenReadStream(UploadLimits.MaxFileBytes);
+                        using var thumbBuffer = new MemoryStream();
+                        await thumbStream.CopyToAsync(thumbBuffer);
+                        thumbnail = $"data:image/jpeg;base64,{Convert.ToBase64String(thumbBuffer.ToArray())}";
+                    }
+
+                    items.Add(new PendingFile(file.Name, contentType, buffer.ToArray(), thumbnail, null));
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or JSException)
+                {
+                    problems.Add($"Could not read '{file.Name}': {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            preparingFiles = false;
+            preparingFileName = null;
+            if (problems.Count > 0)
+            {
+                ErrorMessage = string.Join(" ", problems.Distinct());
+            }
+            StateHasChanged();
         }
     }
 
@@ -258,6 +301,11 @@ else
 
     private async Task SaveAsync()
     {
+        if (preparingFiles || Busy || items.Count == 0)
+        {
+            return;
+        }
+
         NoteDto? saved = null;
         var uploads = items.Select(i => new UploadItem(i.FileName, i.ContentType, i.Data)).ToList();
         var firstNewPage = NextPageNumber;

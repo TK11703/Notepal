@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Notepal.Api\Notepal.Api.csproj" />
+    <ProjectReference Include="..\..\src\Notepal.Web\Notepal.Web.csproj" Aliases="web" />
   </ItemGroup>
 
 </Project>

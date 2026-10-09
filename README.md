@@ -10,6 +10,9 @@ side by side, and search everything you have captured. Every user only ever sees
 - **Capture**: live camera capture in the browser (`getUserMedia`), the device camera app on phones, or upload
   JPEG/PNG/WebP/GIF images, PDF and Word (`.docx`) files. Several files/photos become the pages of a single note,
   and more pages can be appended to an existing note later (**Add pages**).
+  File selection shows preparation progress (current file and total) while files are read and previews are created;
+  pages appear as they are ready. Saving stays disabled until preparation finishes. Storage and AI transcription
+  start only after **Save note** or **Add pages** is clicked.
 - **Original storage**: the uploaded bytes are stored unchanged in PostgreSQL (`bytea`), alongside the extracted text.
 - **AI OCR**: images (and scanned PDF pages) are sent inline to a Foundry model deployment (`gpt-4.1-mini` by default) that transcribes
   handwritten or printed text. Digital PDFs and Word files are parsed locally (PdfPig / Open XML SDK). Work runs in a
