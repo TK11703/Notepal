@@ -18,7 +18,7 @@ public sealed class PageProcessingService(
 {
     private const int MaxConcurrency = 2;
     private const int MaxAttempts = 3;
-    private const int MaxErrorLength = 2000;
+    private static readonly TimeSpan PersistenceTimeout = TimeSpan.FromSeconds(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -88,13 +88,16 @@ public sealed class PageProcessingService(
             var retry = ex is not (OcrUnavailableException or NotSupportedException) && work.Attempts < MaxAttempts;
             var error = ex switch
             {
-                OcrUnavailableException => ex.Message,
+                OcrUnavailableException => "OCR is not configured. Contact your administrator.",
+                NotSupportedException => "Text extraction is not supported for this file.",
                 // Service errors carry raw JSON and response headers; the full details are in the log above.
                 RequestFailedException failed => $"Text extraction failed: the OCR service returned an error ({failed.Status}). Details are in the API logs.",
                 ClientResultException failed => $"Text extraction failed: the OCR service returned an error ({failed.Status}). Details are in the API logs.",
-                _ => $"Text extraction failed: {ex.Message}",
+                _ => "Text extraction failed. Please try again. Details are in the API logs.",
             };
-            await pages.FailAsync(pageId, retry ? ProcessingStatus.Pending : ProcessingStatus.Failed, Truncate(error, MaxErrorLength), CancellationToken.None);
+            // Persist the outcome despite a shutdown race, but never delay shutdown indefinitely.
+            using var persistence = new CancellationTokenSource(PersistenceTimeout);
+            await pages.FailAsync(pageId, retry ? ProcessingStatus.Pending : ProcessingStatus.Failed, error, persistence.Token);
 
             if (retry)
             {
@@ -104,7 +107,9 @@ public sealed class PageProcessingService(
             return;
         }
 
-        await pages.CompleteAsync(pageId, text, CancellationToken.None);
+        // The extraction has finished; allow a bounded final write independent of worker cancellation.
+        using var completion = new CancellationTokenSource(PersistenceTimeout);
+        await pages.CompleteAsync(pageId, text, completion.Token);
     }
 
     private async Task RequeueLaterAsync(Guid pageId, TimeSpan delay, CancellationToken cancellationToken)
@@ -118,6 +123,4 @@ public sealed class PageProcessingService(
         {
         }
     }
-
-    private static string Truncate(string value, int length) => value.Length <= length ? value : value[..length];
 }

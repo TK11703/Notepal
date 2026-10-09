@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Identity.Abstractions;
 using Microsoft.Identity.Web;
@@ -185,7 +186,7 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
         }
     }
 
-    private static async Task<string> ReadProblemAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task<string> ReadProblemAsync(HttpResponseMessage response, CancellationToken ct)
     {
         try
         {
@@ -197,8 +198,9 @@ public sealed class NotepalApiClient(IDownstreamApi api, AuthenticationStateProv
 
             return problem?.Detail ?? problem?.Message ?? problem?.Title ?? response.ReasonPhrase ?? "Request failed.";
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
+            logger.LogWarning("Notepal API returned an unreadable error body with {Status}", (int)response.StatusCode);
             return response.ReasonPhrase ?? "Request failed.";
         }
     }

@@ -81,15 +81,30 @@ and `Features/Search`. Each operation has its own directory, for example
 `Features/Notes/AddPages/AddPagesEndpoint.cs` and `AddPagesValidator.cs`.
 The endpoint owns route registration and orchestration; operation-specific validation lives alongside it
 in a validator when needed. Contract attributes remain enforced by .NET 10 validation, without duplicate validators.
-feature registration classes only assemble routes. Reused HTTP authorization and pagination helpers
+Feature registration classes only assemble routes. Reused HTTP authorization and pagination helpers
 live in `Features/Common`, and upload validation is shared by the note creation/append slices.
 SQL, transactions and database-dependent invariants (such as concurrent page/share limits) stay in Database.
 Repositories project internal database rows into Contracts DTOs; neither API responses nor Web depend on row entities.
 
 ### API
 
-All endpoints (except `/healthz`) require a token with the `access_as_user` scope. Invalid input returns `400` with a
+All `/api` endpoints require a token with the `access_as_user` scope. Invalid input returns `400` with a
 validation problem details body.
+
+Anonymous `/healthz` is liveness-only; `/readyz` includes PostgreSQL connectivity in every environment.
+Readiness reports only aggregate status, not database errors. Aspire and the API Container App readiness
+probe use `/readyz`; the Container App liveness probe continues to use `/healthz` so an outage removes
+traffic without forcing replica restarts. Development also exposes Aspire's `/health` and `/alive`.
+
+Conflict responses use `application/problem+json` with HTTP status `409` and a user-facing `detail`.
+Processing failures expose fixed safe messages through `PageDto.Error`; exception details remain in logs.
+Worker cancellation during extraction leaves a recoverable processing row. Finished extraction/failure
+outcomes have a separate 10-second persistence budget, and migration lock release has a separate
+5-second cleanup budget, so shutdown does not cause unbounded cleanup.
+
+Browser sign-in/cookies and delegated API tokens stay in Web; API bearer authentication stays in API.
+Theme and note-view preferences use disposable JavaScript modules. A small external, synchronous
+theme initializer applies the stored/system theme before first paint without creating globals or listeners.
 
 Request DTO attributes are enforced by .NET 10 Minimal API validation before handlers execute.
 Slices validate and normalize form/query input before repository calls. Null tag collections and empty
@@ -152,6 +167,9 @@ Without `Ocr:Endpoint` everything works except image OCR: such pages are marked 
 and you can type the notes yourself.
 
 Run the tests (Docker required): `dotnet test`
+
+Run the dependency-free theme/preference module tests with Node.js:
+`node --experimental-vm-modules --test tests/Notepal.Api.Tests/ThemeTests.mjs`.
 
 ## Deploy to Azure
 

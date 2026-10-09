@@ -61,7 +61,9 @@ public sealed class DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<Databa
         }
         finally
         {
-            await connection.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_unlock(@Key)", lockKey));
+            // Release the session lock even after caller cancellation, with a bounded cleanup budget.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await connection.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_unlock(@Key)", lockKey, cancellationToken: cleanup.Token));
         }
     }
 }

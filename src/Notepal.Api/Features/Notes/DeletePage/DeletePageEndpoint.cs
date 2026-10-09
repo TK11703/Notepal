@@ -8,7 +8,8 @@ namespace Notepal.Api.Features.Notes.DeletePage;
 internal static class DeletePageEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
-        notes.MapDelete("/{noteId:guid}/pages/{pageId:guid}", HandleAsync).Produces<NoteDto>();
+        notes.MapDelete("/{noteId:guid}/pages/{pageId:guid}", HandleAsync).Produces<NoteDto>()
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(
         Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
@@ -22,7 +23,7 @@ internal static class DeletePageEndpoint
         var (outcome, note) = await notes.DeletePageAsync(noteId, pageId, user.ToDatabaseUser(), access, ct);
         return outcome switch
         {
-            PageChangeOutcome.LastPage => Results.Conflict(new { message = "A note needs at least one page. Delete the note instead." }),
+            PageChangeOutcome.LastPage => Results.Problem("A note needs at least one page. Delete the note instead.", statusCode: StatusCodes.Status409Conflict),
             PageChangeOutcome.Changed => Results.Ok(note),
             _ => Results.NotFound(),
         };

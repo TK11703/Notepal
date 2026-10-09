@@ -10,7 +10,8 @@ internal static class ReprocessPageEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
         notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/reprocess", HandleAsync)
-            .Produces<PageDto>(StatusCodes.Status202Accepted);
+            .Produces<PageDto>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId,
         NotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
@@ -27,7 +28,7 @@ internal static class ReprocessPageEndpoint
             case ReprocessOutcome.NotFound:
                 return Results.NotFound();
             case ReprocessOutcome.AlreadyProcessing:
-                return Results.Conflict(new { message = "The page is already being processed." });
+                return Results.Problem("The page is already being processed.", statusCode: StatusCodes.Status409Conflict);
         }
 
         queue.Enqueue(page!.Id);

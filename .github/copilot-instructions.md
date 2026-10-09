@@ -6,7 +6,8 @@
 - Preserve the existing multi-project architecture and dependency direction.
 - Organize Minimal API functionality as vertical feature slices.
 - Put shared request and response contracts in `Notepal.Contracts`.
-- Keep HTTP, authentication, authorization, and orchestration in `Notepal.Api`.
+- Keep API HTTP handling, bearer-token authentication, authorization policies, and orchestration in `Notepal.Api`.
+- Keep browser OIDC sign-in, cookies, delegated token acquisition, and UI presentation in `Notepal.Web`.
 - Keep SQL migrations and Dapper persistence in `Notepal.Database`.
 - Keep UI behavior and presentation in `Notepal.Web`.
 - Reuse existing abstractions and patterns before introducing new dependencies.
@@ -17,6 +18,7 @@
 - Preserve nullable-reference-type safety; do not suppress warnings without a documented reason.
 - Use asynchronous APIs for database, network, and file operations.
 - Pass `CancellationToken` through endpoint, service, and database boundaries.
+- For final persistence and lock cleanup that must survive caller cancellation, use a documented, bounded independent cancellation budget rather than an unlimited uncancelable operation.
 - Do not use `.Result`, `.Wait()`, `async void`, or unnecessary `Task.Run`.
 - Prefer dependency injection and small, focused services over static mutable state.
 - Use `DateTimeOffset` or UTC consistently for persisted timestamps.
@@ -70,6 +72,7 @@
 - Do not log secrets, tokens, complete connection strings, or sensitive personal data.
 - Do not silently catch exceptions; handle expected failures explicitly and allow unexpected failures to reach standard error handling.
 - External-service failures must not corrupt persisted state.
+- Keep liveness independent of database availability; readiness must check required dependencies in every environment and return status without internal details.
 
 ## Testing and Validation
 

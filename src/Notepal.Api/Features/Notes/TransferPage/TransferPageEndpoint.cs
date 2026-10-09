@@ -8,7 +8,8 @@ namespace Notepal.Api.Features.Notes.TransferPage;
 internal static class TransferPageEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
-        notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/transfer", HandleAsync).Produces<NoteDto>();
+        notes.MapPost("/{noteId:guid}/pages/{pageId:guid}/transfer", HandleAsync).Produces<NoteDto>()
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId, TransferPageRequest body,
         NotesRepository notes, ICurrentUser user, CancellationToken ct)
@@ -34,8 +35,8 @@ internal static class TransferPageEndpoint
         return outcome switch
         {
             PageChangeOutcome.Changed => Results.Ok(note),
-            PageChangeOutcome.LastPage => Results.Conflict(new { message = "A note needs at least one page. Add another page first, or delete the note instead." }),
-            PageChangeOutcome.TargetFull => Results.Conflict(new { message = $"The other note already has the maximum of {UploadLimits.MaxFilesPerNote} pages." }),
+            PageChangeOutcome.LastPage => Results.Problem("A note needs at least one page. Add another page first, or delete the note instead.", statusCode: StatusCodes.Status409Conflict),
+            PageChangeOutcome.TargetFull => Results.Problem($"The other note already has the maximum of {UploadLimits.MaxFilesPerNote} pages.", statusCode: StatusCodes.Status409Conflict),
             _ => Results.NotFound(),
         };
     }

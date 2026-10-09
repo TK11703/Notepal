@@ -1,8 +1,9 @@
 @page "/notes/{NoteId:guid}"
 @attribute [Authorize]
 @inherits NotepalComponentBase
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IJSRuntime JS
+@inject ILogger<NoteDetail> Logger
 
 <PageTitle>@(note?.Title ?? "Note") · Notepal</PageTitle>
 
@@ -236,6 +237,7 @@ else
 
     private readonly Dictionary<Guid, string> drafts = [];
     private readonly CancellationTokenSource disposed = new();
+    private IJSObjectReference? preferences;
     private NoteDto? note;
     private PageDto? current;
     private ViewTab tab = ViewTab.SideBySide;
@@ -286,7 +288,8 @@ else
         {
             try
             {
-                var saved = await JS.InvokeAsync<string?>("notepalPrefs.get", disposed.Token, ViewPreferenceKey);
+                preferences = await JS.InvokeAsync<IJSObjectReference>("import", disposed.Token, "./js/preferences.js");
+                var saved = await preferences.InvokeAsync<string?>("get", disposed.Token, ViewPreferenceKey);
                 if (Enum.TryParse<ViewTab>(saved, out var preferred) && Enum.IsDefined(preferred) && preferred != tab)
                 {
                     tab = preferred;
@@ -295,7 +298,7 @@ else
             }
             catch (Exception ex) when (ex is JSException or JSDisconnectedException or OperationCanceledException)
             {
-                // The preference is optional; keep the default view.
+                Logger.LogDebug("Note view preference could not be loaded; keeping the default view");
             }
         }
     }
@@ -305,10 +308,14 @@ else
         tab = value;
         try
         {
-            await JS.InvokeVoidAsync("notepalPrefs.set", disposed.Token, ViewPreferenceKey, value.ToString());
+            if (preferences is not null)
+            {
+                await preferences.InvokeVoidAsync("set", disposed.Token, ViewPreferenceKey, value.ToString());
+            }
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or OperationCanceledException)
         {
+            Logger.LogDebug("Note view preference could not be saved");
         }
     }
 
@@ -620,9 +627,20 @@ else
     private static string FormatSize(long bytes) =>
         bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{Math.Max(1, bytes / 1024)} KB";
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         disposed.Cancel();
         disposed.Dispose();
+        if (preferences is not null)
+        {
+            try
+            {
+                await preferences.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                Logger.LogDebug("Preference module disposal was interrupted by circuit disconnection");
+            }
+        }
     }
 }

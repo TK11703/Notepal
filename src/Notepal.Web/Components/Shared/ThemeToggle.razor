@@ -1,10 +1,12 @@
 @inject IJSRuntime JS
+@inject ILogger<ThemeToggle> Logger
+@implements IAsyncDisposable
 
 <div class="segmented segmented-sm" role="radiogroup" aria-label="Color theme">
     @foreach (var m in Modes)
     {
         <button type="button" role="radio" class="segmented-item @(mode == m.Value ? "active" : null)" aria-checked="@(mode == m.Value ? "true" : "false")"
-                title="@m.Label theme" @onclick="() => SetAsync(m.Value)">
+                title="@m.Label theme" disabled="@(module is null)" @onclick="() => SetAsync(m.Value)">
             <Icon Name="@m.Icon" />
             <span class="visually-hidden">@m.Label</span>
         </button>
@@ -20,18 +22,51 @@
     ];
 
     private string mode = "auto";
+    private IJSObjectReference? module;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            mode = await JS.InvokeAsync<string>("notepalTheme.get");
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
+            mode = await module.InvokeAsync<string>("initialize");
             StateHasChanged();
         }
     }
 
     private async Task SetAsync(string next)
     {
-        mode = await JS.InvokeAsync<string>("notepalTheme.set", next);
+        if (module is not null)
+        {
+            mode = await module.InvokeAsync<string>("set", next);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await module.InvokeVoidAsync("dispose");
+        }
+        catch (JSDisconnectedException)
+        {
+            Logger.LogDebug("Theme listener cleanup was interrupted by circuit disconnection");
+        }
+        finally
+        {
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                Logger.LogDebug("Theme module disposal was interrupted by circuit disconnection");
+            }
+        }
     }
 }

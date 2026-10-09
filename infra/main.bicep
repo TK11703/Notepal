@@ -181,6 +181,14 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               initialDelaySeconds: 10
               periodSeconds: 30
             }
+            {
+              type: 'Readiness'
+              httpGet: { path: '/readyz', port: 8080 }
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 3
+            }
           ]
         }
       ]

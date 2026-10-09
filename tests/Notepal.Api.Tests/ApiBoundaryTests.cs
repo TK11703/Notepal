@@ -119,9 +119,28 @@ public sealed class ApiBoundaryTests(BoundaryApiFactory factory) : IClassFixture
             Assert.NotEmpty(responses);
             foreach (var response in responses.Where(response => response.Type is not null && response.Type != typeof(void)))
             {
-                AssertContractType(response.Type!);
+                if (response.StatusCode >= 400)
+                {
+                    Assert.Equal(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails), response.Type);
+                }
+                else
+                {
+                    AssertContractType(response.Type!);
+                }
             }
         }
+    }
+
+    [Fact]
+    public async Task Production_readiness_fails_without_database_but_liveness_remains_healthy()
+    {
+        using var production = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
+        using var client = production.CreateClient();
+        using var readiness = await client.GetAsync("/readyz");
+        using var liveness = await client.GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, readiness.StatusCode);
+        Assert.Equal("Unhealthy", await readiness.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.OK, liveness.StatusCode);
     }
 
     [Fact]

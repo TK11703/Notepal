@@ -66,7 +66,7 @@ var app = builder.Build();
 
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
-    await app.Services.GetRequiredService<DatabaseMigrator>().MigrateAsync();
+    await app.Services.GetRequiredService<DatabaseMigrator>().MigrateAsync(app.Lifetime.ApplicationStopping);
 }
 
 app.UseForwardedHeaders();
@@ -83,6 +83,8 @@ app.UseAuthorization();
 
 // Liveness only: a database outage must not make Container Apps restart the replica.
 app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = r => r.Tags.Contains("live") }).AllowAnonymous();
+// Readiness includes PostgreSQL. Return status only, never dependency or exception details.
+app.MapHealthChecks("/readyz").AllowAnonymous();
 app.MapDefaultEndpoints();
 
 app.MapGroup("/api")

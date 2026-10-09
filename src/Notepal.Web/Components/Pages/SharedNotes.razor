@@ -174,10 +174,10 @@ else
         // Load the selected list, plus the size of the other one for its tab.
         var withMe = Api.ListSharedWithMeAsync(ByMe ? 1 : page, ByMe ? 1 : PageSize);
         var byMe = Api.ListSharedByMeAsync(ByMe ? page : 1, ByMe ? PageSize : 1);
-        await Task.WhenAll(withMe, byMe);
-        withMeTotal = withMe.Result.Total;
-        byMeTotal = byMe.Result.Total;
-        result = ByMe ? byMe.Result : withMe.Result;
+        var lists = await Task.WhenAll(withMe, byMe);
+        withMeTotal = lists[0].Total;
+        byMeTotal = lists[1].Total;
+        result = ByMe ? lists[1] : lists[0];
     });
 
     private bool AllSelected => result is { Items.Count: > 0 } r && r.Items.All(i => selected.Contains(i.Note.Id));

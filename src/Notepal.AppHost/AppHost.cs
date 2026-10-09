@@ -9,7 +9,7 @@ var database = postgres.AddDatabase("notepal");
 var api = builder.AddProject<Projects.Notepal_Api>("api", launchProfileName: "https")
     .WithReference(database)
     .WaitFor(database)
-    .WithHttpHealthCheck("/healthz");
+    .WithHttpHealthCheck("/readyz");
 
 // The https profile keeps https://localhost:7137, which is the redirect URI registered in Entra ID.
 builder.AddProject<Projects.Notepal_Web>("web", launchProfileName: "https")

@@ -422,7 +422,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
                 UPDATE notes SET updated_at = @Now
                  WHERE id = @NoteId AND EXISTS (SELECT 1 FROM page)
             )
-            SELECT * FROM page
+            SELECT {PageColumns} FROM page p
             """, new { PageId = pageId, NoteId = noteId, user.UserId, user.Email, Text = text, Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
 
         return page?.ToDto();

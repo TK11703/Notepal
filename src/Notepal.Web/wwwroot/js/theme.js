@@ -1,47 +1,47 @@
-// Loaded synchronously in <head> so the correct color scheme is applied before first paint.
-(function () {
-    const storageKey = 'notepal-theme';
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
+const storageKey = 'notepal-theme';
+const media = window.matchMedia('(prefers-color-scheme: dark)');
+let subscribers = 0;
 
-    function stored() {
-        try {
-            const value = localStorage.getItem(storageKey);
-            return value === 'light' || value === 'dark' ? value : 'auto';
-        } catch {
-            return 'auto';
-        }
+export function get() {
+    try {
+        const value = localStorage.getItem(storageKey);
+        return value === 'light' || value === 'dark' ? value : 'auto';
+    } catch {
+        console.warn('Theme storage is unavailable; using the system preference.');
+        return 'auto';
     }
+}
 
-    function apply(mode) {
-        const resolved = mode === 'auto' ? (media.matches ? 'dark' : 'light') : mode;
-        document.documentElement.setAttribute('data-bs-theme', resolved);
+function apply(mode) {
+    const resolved = mode === 'auto' ? (media.matches ? 'dark' : 'light') : mode;
+    document.documentElement.setAttribute('data-bs-theme', resolved);
+}
+
+export function set(mode) {
+    try {
+        if (mode === 'auto') {
+            localStorage.removeItem(storageKey);
+        } else {
+            localStorage.setItem(storageKey, mode);
+        }
+    } catch {
+        console.warn('Theme preference could not be saved; it will apply only to this page.');
     }
+    apply(mode);
+    return mode;
+}
 
-    window.notepalTheme = {
-        get: stored,
-        set: function (mode) {
-            try {
-                if (mode === 'auto') {
-                    localStorage.removeItem(storageKey);
-                } else {
-                    localStorage.setItem(storageKey, mode);
-                }
-            } catch { /* storage unavailable: theme still applies for this page */ }
-            apply(mode);
-            return stored();
-        }
-    };
+function systemThemeChanged() {
+    if (get() === 'auto') apply('auto');
+}
 
-    // Small UI preferences (e.g. the preferred note view) remembered per browser.
-    window.notepalPrefs = {
-        get: function (key) {
-            try { return localStorage.getItem('notepal-' + key); } catch { return null; }
-        },
-        set: function (key, value) {
-            try { localStorage.setItem('notepal-' + key, value); } catch { /* storage unavailable */ }
-        }
-    };
+export function initialize() {
+    if (subscribers++ === 0) media.addEventListener('change', systemThemeChanged);
+    const mode = get();
+    apply(mode);
+    return mode;
+}
 
-    media.addEventListener('change', function () { if (stored() === 'auto') apply('auto'); });
-    apply(stored());
-})();
+export function dispose() {
+    if (subscribers > 0 && --subscribers === 0) media.removeEventListener('change', systemThemeChanged);
+}
