@@ -2,21 +2,8 @@ using Notepal.Contracts;
 
 namespace Notepal.Database;
 
-internal static class DatabaseMapping
+internal static partial class DatabaseMapping
 {
-    public static PageDto ToDto(this Page page) => new(
-        page.Id,
-        page.PageNumber,
-        page.FileName,
-        page.ContentType,
-        page.SizeBytes,
-        page.Status,
-        page.ExtractedText,
-        page.EffectiveText,
-        page.EditedText is not null,
-        page.Error,
-        page.UpdatedAt);
-
     public static NoteDto ToDto(this Note note, IEnumerable<Page> pages, NoteAccess? access = null, int shareCount = 0)
     {
         var ordered = pages.OrderBy(p => p.PageNumber).ToList();
@@ -32,13 +19,6 @@ internal static class DatabaseMapping
             access?.SharedBy,
             shareCount);
     }
-
-    public static NoteShareDto ToDto(this NoteShare share) => new(
-        share.Id,
-        share.RecipientEmail,
-        share.RecipientName,
-        share.Permission,
-        share.CreatedAt);
 
     public static ProcessingStatus AggregateStatus(IEnumerable<ProcessingStatus> statuses)
     {

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Notepal.Contracts\Notepal.Contracts.csproj" />
+    <InternalsVisibleTo Include="Notepal.Api.Tests" />
   </ItemGroup>
 
 </Project>

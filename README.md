@@ -76,6 +76,27 @@ Claims and HTTP authorization responses stay in the API; repositories receive a 
 and retain ownership and sharing predicates in SQL. Migration resource names and versions are unchanged
 so existing databases keep their migration history.
 
+Database code is grouped into `Connections`, `Initialization`, `Notes`, `Pages`, `Sharing`,
+`Processing` and `Migrations`. Public types retain the `Notepal.Database` namespace and repository
+APIs; row entities remain internal. SQL stays parameterized within the existing repositories.
+
+The migration ledger records a SHA-256 checksum for each script, with CRLF normalized to LF.
+Startup verifies every applied migration before running pending scripts and fails if an applied
+script has changed or is missing. Add a new, versioned migration rather than editing an applied one.
+Schema changes and their ledger entries commit in the same transaction; an advisory lock serializes
+concurrent initializers.
+
+Existing ledgers without checksums are upgraded automatically: only `0001_initial` and
+`0002_tags_and_sharing` can be adopted, and their current script contents must match pinned,
+trusted legacy hashes. Adoption preserves application data and original application timestamps.
+This establishes a baseline; it cannot prove which script contents were historically executed
+before checksums existed. Unknown unchecksummed history requires manual investigation, not
+automatic acceptance. Do not change the pinned legacy hashes to bypass a startup failure.
+
+Migration regression tests in `tests/Notepal.Api.Tests/DatabaseMigrationTests.cs` use isolated
+PostgreSQL databases to cover checksum verification, legacy adoption, deterministic ordering,
+concurrent initialization, transactional rollback and cancellation/lock cleanup.
+
 API use cases are vertical slices under `Features/Notes`, `Features/Tags`, `Features/Sharing`
 and `Features/Search`. Each operation has its own directory, for example
 `Features/Notes/AddPages/AddPagesEndpoint.cs` and `AddPagesValidator.cs`.
