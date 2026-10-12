@@ -14,7 +14,7 @@ internal static class ReprocessPageEndpoint
             .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId,
-        NotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
         var (access, denied) = await NoteAuthorization.RequireEditableAsync(notes, noteId, user, ct);
         if (access is null)

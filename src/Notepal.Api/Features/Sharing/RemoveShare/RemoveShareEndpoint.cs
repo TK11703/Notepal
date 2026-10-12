@@ -11,7 +11,7 @@ internal static class RemoveShareEndpoint
         shares.MapDelete("/{shareId:guid}", HandleAsync).Produces(StatusCodes.Status204NoContent);
 
     private static async Task<IResult> HandleAsync(
-        Guid noteId, Guid shareId, NotesRepository notes, SharesRepository shares, ICurrentUser user, CancellationToken ct)
+        Guid noteId, Guid shareId, INotesRepository notes, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         if (await shares.RemoveShareAsync(noteId, shareId, user.ToDatabaseUser(), ct))
         {

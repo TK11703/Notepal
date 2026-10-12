@@ -12,7 +12,7 @@ namespace Notepal.Api.Processing;
 /// </summary>
 public sealed class PageProcessingService(
     ProcessingQueue queue,
-    PageWorkRepository pages,
+    IPageWorkRepository pages,
     TextExtractionService extractor,
     ILogger<PageProcessingService> logger) : BackgroundService
 {

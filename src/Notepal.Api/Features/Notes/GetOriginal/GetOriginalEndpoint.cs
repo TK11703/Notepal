@@ -12,7 +12,7 @@ internal static class GetOriginalEndpoint
         notes.MapGet("/{noteId:guid}/pages/{pageId:guid}/original", HandleAsync);
 
     private static async Task<IResult> HandleAsync(
-        Guid noteId, Guid pageId, NotesRepository notes, ICurrentUser user, HttpContext http, CancellationToken ct)
+        Guid noteId, Guid pageId, INotesRepository notes, ICurrentUser user, HttpContext http, CancellationToken ct)
     {
         var original = await notes.GetOriginalAsync(noteId, pageId, user.ToDatabaseUser(), ct);
         if (original is null)

@@ -12,16 +12,25 @@ public sealed class DatabaseMigrator
     private readonly NpgsqlDataSource dataSource;
     private readonly ILogger<DatabaseMigrator> logger;
     private readonly IReadOnlyList<MigrationScript>? scripts;
+    private readonly ISqlFileProvider sql;
 
     public DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<DatabaseMigrator> logger)
-        : this(dataSource, logger, null) { }
+        : this(dataSource, logger, new SqlFileProvider(), null) { }
+
+    public DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<DatabaseMigrator> logger, ISqlFileProvider sql)
+        : this(dataSource, logger, sql, null) { }
 
     internal DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<DatabaseMigrator> logger,
         IReadOnlyList<MigrationScript>? scripts)
+        : this(dataSource, logger, new SqlFileProvider(), scripts) { }
+
+    private DatabaseMigrator(NpgsqlDataSource dataSource, ILogger<DatabaseMigrator> logger,
+        ISqlFileProvider sql, IReadOnlyList<MigrationScript>? scripts)
     {
         this.dataSource = dataSource;
         this.logger = logger;
         this.scripts = scripts;
+        this.sql = sql;
     }
 
     // Trusted contents of the two releases that predate checksum tracking. Never update these hashes.
@@ -43,20 +52,14 @@ public sealed class DatabaseMigrator
         var lockKey = new { Key = AdvisoryLockKey };
 
         // Serializes replicas that start at the same time.
-        await connection.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_lock(@Key)", lockKey, cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(new CommandDefinition(sql.Get("Commands/Initialization/AcquireMigrationLock.sql"), lockKey, cancellationToken: cancellationToken));
         try
         {
-            await connection.ExecuteAsync(new CommandDefinition("""
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version    text PRIMARY KEY,
-                    applied_at timestamptz NOT NULL DEFAULT now(),
-                    checksum   text
-                );
-                ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum text;
-                """, cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(new CommandDefinition(
+                sql.Get("Commands/Initialization/EnsureMigrationLedger.sql"), cancellationToken: cancellationToken));
 
             var applied = (await connection.QueryAsync<MigrationHistory>(new CommandDefinition(
-                "SELECT version, checksum FROM schema_migrations", cancellationToken: cancellationToken)))
+                sql.Get("Commands/Initialization/GetMigrationHistory.sql"), cancellationToken: cancellationToken)))
                 .ToDictionary(row => row.Version, StringComparer.Ordinal);
             var orderedScripts = (scripts ?? await ReadScriptsAsync(cancellationToken))
                 .OrderBy(script => script.Version, StringComparer.Ordinal).ToArray();
@@ -87,14 +90,14 @@ public sealed class DatabaseMigrator
                 foreach (var row in applied.Values.Where(row => row.Checksum is null))
                 {
                     await connection.ExecuteAsync(new CommandDefinition(
-                        "UPDATE schema_migrations SET checksum = @Checksum WHERE version = @Version",
+                        sql.Get("Commands/Initialization/AdoptLegacyChecksum.sql"),
                         new { row.Version, Checksum = byVersion[row.Version].Checksum }, transaction,
                         cancellationToken: cancellationToken));
                     logger.LogInformation("Adopted trusted legacy checksum for migration {Version}", row.Version);
                 }
 
                 await connection.ExecuteAsync(new CommandDefinition(
-                    "ALTER TABLE schema_migrations ALTER COLUMN checksum SET NOT NULL",
+                    sql.Get("Commands/Initialization/RequireMigrationChecksum.sql"),
                     transaction: transaction, cancellationToken: cancellationToken));
                 await transaction.CommitAsync(cancellationToken);
             }
@@ -109,7 +112,7 @@ public sealed class DatabaseMigrator
                 await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
                 await connection.ExecuteAsync(new CommandDefinition(script.Body, transaction: transaction, cancellationToken: cancellationToken));
                 await connection.ExecuteAsync(new CommandDefinition(
-                    "INSERT INTO schema_migrations (version, checksum) VALUES (@Version, @Checksum)",
+                    sql.Get("Commands/Initialization/RecordMigration.sql"),
                     new { script.Version, script.Checksum }, transaction, cancellationToken: cancellationToken));
                 await transaction.CommitAsync(cancellationToken);
 
@@ -121,7 +124,7 @@ public sealed class DatabaseMigrator
         {
             // Release the session lock even after caller cancellation, with a bounded cleanup budget.
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await connection.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_unlock(@Key)", lockKey, cancellationToken: cleanup.Token));
+            await connection.ExecuteAsync(new CommandDefinition(sql.Get("Commands/Initialization/ReleaseMigrationLock.sql"), lockKey, cancellationToken: cleanup.Token));
         }
     }
 

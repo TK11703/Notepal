@@ -28,7 +28,7 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
         using var app = WithoutWorker();
         using var client = CreateClient(app, Guid.NewGuid().ToString());
         var (user, note) = await CreateNoteAsync(app.Services, client);
-        var pages = app.Services.GetRequiredService<PageWorkRepository>();
+        var pages = app.Services.GetRequiredService<IPageWorkRepository>();
         var ocr = new DelegateOcr(_ => Task.FromException<string>(kind switch
         {
             "unconfigured" => new OcrUnavailableException(InternalDetail),
@@ -50,7 +50,7 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
         Assert.NotNull(result);
         Assert.Equal(expected, result.Pages[0].Error);
         Assert.Equal(status, result.Pages[0].Status);
-        var original = await app.Services.GetRequiredService<NotesRepository>()
+        var original = await app.Services.GetRequiredService<INotesRepository>()
             .GetOriginalAsync(note.Id, note.Pages[0].Id, user, CancellationToken.None);
         Assert.NotNull(original);
         Assert.Equal(TestFiles.Png, original.Data);
@@ -62,7 +62,7 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
         using var app = WithoutWorker();
         using var client = CreateClient(app, Guid.NewGuid().ToString());
         var (_, note) = await CreateNoteAsync(app.Services, client);
-        var pages = app.Services.GetRequiredService<PageWorkRepository>();
+        var pages = app.Services.GetRequiredService<IPageWorkRepository>();
         using var cancellation = new CancellationTokenSource();
         using var interrupted = Worker(pages, new DelegateOcr(ct =>
         {
@@ -91,7 +91,7 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
         using var client = CreateClient(app, Guid.NewGuid().ToString());
         var (_, note) = await CreateNoteAsync(app.Services, client);
         using var cancellation = new CancellationTokenSource();
-        using var worker = Worker(app.Services.GetRequiredService<PageWorkRepository>(), new DelegateOcr(_ =>
+        using var worker = Worker(app.Services.GetRequiredService<IPageWorkRepository>(), new DelegateOcr(_ =>
         {
             cancellation.Cancel();
             return Task.FromResult("Finished before shutdown");
@@ -119,7 +119,7 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
             new TransferPageRequest(target.Id));
         await AssertConflictAsync(transfer, "A note needs at least one page. Add another page first, or delete the note instead.");
 
-        await app.Services.GetRequiredService<PageWorkRepository>().TryStartAsync(page, CancellationToken.None);
+        await app.Services.GetRequiredService<IPageWorkRepository>().TryStartAsync(page, CancellationToken.None);
         using var reprocess = await client.PostAsync($"/api/notes/{source.Id}/pages/{page}/reprocess", null);
         await AssertConflictAsync(reprocess, "The page is already being processed.");
 
@@ -161,12 +161,12 @@ public sealed class ReliabilityTests(NotepalApiFactory factory) : IClassFixture<
     private static async Task<(DatabaseUser User, NoteDto Note)> CreateNoteAsync(IServiceProvider services, HttpClient client, int count = 1)
     {
         var user = new DatabaseUser(client.DefaultRequestHeaders.GetValues(TestAuthHandler.UserHeader).Single(), null);
-        var note = await services.GetRequiredService<NotesRepository>().CreateNoteAsync(user.UserId, "Reliability", [],
+        var note = await services.GetRequiredService<INotesRepository>().CreateNoteAsync(user.UserId, "Reliability", [],
             Enumerable.Range(1, count).Select(i => new NewPage($"{i}.png", "image/png", TestFiles.Png)).ToArray(), CancellationToken.None);
         return (user, note);
     }
 
-    private static PageProcessingService Worker(PageWorkRepository pages, IOcrClient ocr) =>
+    private static PageProcessingService Worker(IPageWorkRepository pages, IOcrClient ocr) =>
         new(new ProcessingQueue(), pages, new TextExtractionService(ocr, NullLogger<TextExtractionService>.Instance),
             NullLogger<PageProcessingService>.Instance);
 

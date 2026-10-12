@@ -10,7 +10,7 @@ internal static class LeaveSharedNotesEndpoint
         shared.MapPost("/with-me/leave", HandleAsync).Produces<LeaveSharedNotesResult>();
 
     private static async Task<IResult> HandleAsync(
-        LeaveSharedNotesRequest body, SharesRepository shares, ICurrentUser user, CancellationToken ct)
+        LeaveSharedNotesRequest body, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         var (noteIds, error) = LeaveSharedNotesValidator.Validate(body);
         if (error is not null)

@@ -11,7 +11,7 @@ internal static class CreateNoteEndpoint
         notes.MapPost("/", HandleAsync).DisableAntiforgery().Produces<NoteDto>(StatusCodes.Status201Created);
 
     private static async Task<IResult> HandleAsync(
-        IFormCollection form, NotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
+        IFormCollection form, INotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
         var (title, tags, pages, error) = await CreateNoteValidator.ValidateAsync(form, ct);
         if (error is not null)

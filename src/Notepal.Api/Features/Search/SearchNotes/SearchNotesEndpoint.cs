@@ -18,7 +18,7 @@ internal static class SearchNotesEndpoint
     public static void Map(RouteGroupBuilder api) =>
         api.MapGet("/search", Search).WithTags("Search").Produces<PagedResult<SearchResultDto>>();
 
-    private static async Task<IResult> Search(string? q, NotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    private static async Task<IResult> Search(string? q, INotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         var ownerId = user.UserId!;
         (page, pageSize) = Paging.Normalize(page, pageSize);

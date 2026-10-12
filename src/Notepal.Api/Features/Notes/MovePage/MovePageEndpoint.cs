@@ -11,7 +11,7 @@ internal static class MovePageEndpoint
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/position", HandleAsync).Produces<NoteDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId, MovePageRequest body,
-        NotesRepository notes, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         var (access, denied) = await NoteAuthorization.RequireEditableAsync(notes, noteId, user, ct);
         if (access is null)

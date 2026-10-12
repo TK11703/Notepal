@@ -12,7 +12,7 @@ internal static class TransferPageEndpoint
             .ProducesProblem(StatusCodes.Status409Conflict);
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId, TransferPageRequest body,
-        NotesRepository notes, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         var error = TransferPageValidator.Validate(noteId, body);
         if (error is not null)

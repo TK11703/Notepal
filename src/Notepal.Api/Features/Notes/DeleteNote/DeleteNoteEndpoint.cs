@@ -9,7 +9,7 @@ internal static class DeleteNoteEndpoint
     public static void Map(RouteGroupBuilder notes) =>
         notes.MapDelete("/{noteId:guid}", HandleAsync).Produces(StatusCodes.Status204NoContent);
 
-    private static async Task<IResult> HandleAsync(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
+    private static async Task<IResult> HandleAsync(Guid noteId, INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         if (await notes.DeleteNoteAsync(user.UserId!, noteId, ct))
         {

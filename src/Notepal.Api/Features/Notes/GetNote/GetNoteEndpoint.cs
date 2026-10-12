@@ -9,7 +9,7 @@ internal static class GetNoteEndpoint
     public static void Map(RouteGroupBuilder notes) =>
         notes.MapGet("/{noteId:guid}", HandleAsync).Produces<NoteDto>();
 
-    private static async Task<IResult> HandleAsync(Guid noteId, NotesRepository notes, ICurrentUser user, CancellationToken ct)
+    private static async Task<IResult> HandleAsync(Guid noteId, INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         var caller = user.ToDatabaseUser();
         var access = await notes.GetAccessAsync(noteId, caller, ct);

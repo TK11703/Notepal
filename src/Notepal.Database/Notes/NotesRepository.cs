@@ -4,16 +4,9 @@ using Notepal.Contracts;
 
 namespace Notepal.Database;
 
-/// <summary>Columns and row type of a note in a list (<see cref="NoteSummaryDto"/>). The note table must be aliased <c>n</c>.</summary>
+/// <summary>Row type of a note in a list (<see cref="NoteSummaryDto"/>).</summary>
 internal class NoteSummaryRow
 {
-    public const string Columns = """
-        n.id, n.title, n.created_at, n.updated_at, n.tags,
-        coalesce((SELECT array_agg(p.status) FROM pages p WHERE p.note_id = n.id), '{}'::integer[]) AS statuses,
-        (SELECT left(coalesce(p.edited_text, p.extracted_text), 240)
-           FROM pages p WHERE p.note_id = n.id ORDER BY p.page_number LIMIT 1) AS preview
-        """;
-
     public Guid Id { get; set; }
     public string Title { get; set; } = null!;
     public DateTimeOffset CreatedAt { get; set; }
@@ -34,35 +27,15 @@ internal class NoteSummaryRow
 /// statements are additionally allowed for people the note is shared with, and every statement carries that check so a
 /// caller can never read or change rows they have no access to, even when they guess the ids.
 /// </summary>
-public sealed class NotesRepository(NpgsqlDataSource db)
+public sealed class NotesRepository(NpgsqlDataSource db, ISqlFileProvider sql) : INotesRepository
 {
-    private const string PageColumns =
-        "p.id, p.note_id, p.owner_id, p.page_number, p.file_name, p.content_type, p.size_bytes, p.status, p.attempts, p.error, p.extracted_text, p.edited_text, p.updated_at";
-
-    private const string SearchConfig = "english";
-
-    /// <summary>Matches shares (aliased <c>s</c>) addressed to the caller by object id or, for shares created by email address, by sign-in address.</summary>
-    internal const string IsRecipient = "(s.recipient_id = @UserId OR s.recipient_email = @Email)";
-
-    /// <summary>The note (aliased <c>n</c>) is owned by or shared with the caller.</summary>
-    private const string Visible =
-        $"(n.owner_id = @UserId OR EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND {IsRecipient}))";
-
-    /// <summary>The note (aliased <c>n</c>) is owned by the caller or shared with them as a contributor.</summary>
-    private static readonly string Editable =
-        $"(n.owner_id = @UserId OR EXISTS (SELECT 1 FROM note_shares s WHERE s.note_id = n.id AND s.permission = {(int)SharePermission.Contributor} AND {IsRecipient}))";
-
     /// <summary>Resolves the caller's access to a note, or <c>null</c> when the note does not exist or is not visible to them.</summary>
     public async Task<NoteAccess?> GetAccessAsync(Guid noteId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        var rows = (await connection.QueryAsync<AccessRow>(new CommandDefinition($"""
-            SELECT n.owner_id, s.permission, s.owner_name, s.owner_email
-              FROM notes n
-              LEFT JOIN note_shares s ON s.note_id = n.id AND {IsRecipient}
-             WHERE n.id = @NoteId
-             ORDER BY s.created_at
-            """, new { NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct))).AsList();
+        var rows = (await connection.QueryAsync<AccessRow>(new CommandDefinition(
+            sql.Get("Commands/Notes/GetNoteAccess.sql"),
+            new { NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct))).AsList();
 
         if (rows.Count == 0)
         {
@@ -89,17 +62,10 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     /// <summary>The caller's own notes carrying all of <paramref name="tags"/>, most recently updated first.</summary>
     public async Task<PagedResult<NoteSummaryDto>> ListNotesAsync(string ownerId, IEnumerable<string> tags, int page, int pageSize, CancellationToken ct)
     {
-        const string filter = "FROM notes n WHERE n.owner_id = @OwnerId AND n.tags @> @Tags";
-
         await using var connection = await db.OpenConnectionAsync(ct);
-        using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""
-            SELECT count(*) {filter};
-
-            SELECT {NoteSummaryRow.Columns}
-              {filter}
-             ORDER BY n.updated_at DESC
-             LIMIT @Limit OFFSET @Offset
-            """, new { OwnerId = ownerId, Tags = tags.ToArray(), Limit = pageSize, Offset = Offset(page, pageSize) }, cancellationToken: ct));
+        using var results = await connection.QueryMultipleAsync(new CommandDefinition(
+            sql.Get("Commands/Notes/ListNotes.sql"),
+            new { OwnerId = ownerId, Tags = tags.ToArray(), Limit = pageSize, Offset = Offset(page, pageSize) }, cancellationToken: ct));
 
         var total = await results.ReadSingleAsync<long>();
         var items = (await results.ReadAsync<NoteSummaryRow>()).Select(r => r.ToDto()).ToList();
@@ -110,12 +76,9 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     public async Task<NoteStatsDto> GetStatsAsync(string ownerId, IEnumerable<string> tags, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        var (notes, pages) = await connection.QuerySingleAsync<(int Notes, int Pages)>(new CommandDefinition("""
-            SELECT count(DISTINCT n.id)::integer, count(p.id)::integer
-              FROM notes n
-              LEFT JOIN pages p ON p.note_id = n.id
-             WHERE n.owner_id = @OwnerId AND n.tags @> @Tags
-            """, new { OwnerId = ownerId, Tags = tags.ToArray() }, cancellationToken: ct));
+        var (notes, pages) = await connection.QuerySingleAsync<(int Notes, int Pages)>(new CommandDefinition(
+            sql.Get("Commands/Notes/GetNoteStats.sql"),
+            new { OwnerId = ownerId, Tags = tags.ToArray() }, cancellationToken: ct));
 
         return new NoteStatsDto(notes, pages);
     }
@@ -123,18 +86,9 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     public async Task<NoteDto?> GetNoteAsync(Guid noteId, DatabaseUser user, NoteAccess access, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""
-            SELECT n.id, n.owner_id, n.title, n.created_at, n.updated_at, n.tags
-              FROM notes n
-             WHERE n.id = @NoteId AND {Visible};
-
-            SELECT {PageColumns}
-              FROM pages p
-              JOIN notes n ON n.id = p.note_id
-             WHERE p.note_id = @NoteId AND {Visible};
-
-            SELECT count(*)::integer FROM note_shares s WHERE s.note_id = @NoteId AND s.owner_id = @UserId;
-            """, new { NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
+        using var results = await connection.QueryMultipleAsync(new CommandDefinition(
+            sql.Get("Commands/Notes/GetNote.sql"),
+            new { NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
 
         var note = await results.ReadSingleOrDefaultAsync<Note>();
         var pages = await results.ReadAsync<Page>();
@@ -150,10 +104,8 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         await using var connection = await db.OpenConnectionAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
 
-        await connection.ExecuteAsync(new CommandDefinition("""
-            INSERT INTO notes (id, owner_id, title, created_at, updated_at, tags)
-            VALUES (@Id, @OwnerId, @Title, @CreatedAt, @UpdatedAt, @Tags)
-            """, note, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql.Get("Commands/Notes/InsertNote.sql"), note, transaction, cancellationToken: ct));
 
         var pages = await InsertPagesAsync(connection, transaction, note.Id, ownerId, 1, files, now, ct);
 
@@ -165,8 +117,8 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var updated = await connection.ExecuteAsync(new CommandDefinition(
-            $"UPDATE notes n SET title = @Title, updated_at = @Now WHERE n.id = @NoteId AND {Editable}",
-            new { NoteId = noteId, user.UserId, user.Email, Title = title, Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
+            sql.Get("Commands/Notes/RenameNote.sql"),
+            new { NoteId = noteId, user.UserId, user.Email, Contributor = SharePermission.Contributor, Title = title, Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
 
         return updated == 0 ? null : await GetNoteAsync(noteId, user, access, ct);
     }
@@ -175,8 +127,8 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var updated = await connection.ExecuteAsync(new CommandDefinition(
-            $"UPDATE notes n SET tags = @Tags, updated_at = @Now WHERE n.id = @NoteId AND {Editable}",
-            new { NoteId = noteId, user.UserId, user.Email, Tags = tags.ToArray(), Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
+            sql.Get("Commands/Tags/SetNoteTags.sql"),
+            new { NoteId = noteId, user.UserId, user.Email, Contributor = SharePermission.Contributor, Tags = tags.ToArray(), Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
 
         return updated == 0 ? null : await GetNoteAsync(noteId, user, access, ct);
     }
@@ -190,15 +142,15 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
         // Locking the note serializes concurrent uploads so page numbers and the page limit stay consistent.
         var ownerId = await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
-            $"SELECT n.owner_id FROM notes n WHERE n.id = @NoteId AND {Editable} FOR UPDATE",
-            new { NoteId = noteId, user.UserId, user.Email }, transaction, cancellationToken: ct));
+            sql.Get("Commands/Notes/LockEditableNoteOwner.sql"),
+            new { NoteId = noteId, user.UserId, user.Email, Contributor = SharePermission.Contributor }, transaction, cancellationToken: ct));
         if (ownerId is null)
         {
             return new AddPagesResult(AddPagesOutcome.NotFound);
         }
 
         var (count, last) = await connection.QuerySingleAsync<(int Count, int Last)>(new CommandDefinition(
-            "SELECT count(*)::integer, coalesce(max(page_number), 0) FROM pages WHERE note_id = @NoteId",
+            sql.Get("Commands/Pages/GetPageCountAndLastNumber.sql"),
             new { NoteId = noteId }, transaction, cancellationToken: ct));
 
         var remaining = UploadLimits.MaxFilesPerNote - count;
@@ -209,7 +161,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
         var pages = await InsertPagesAsync(connection, transaction, noteId, ownerId, last + 1, files, now, ct);
         await connection.ExecuteAsync(new CommandDefinition(
-            "UPDATE notes SET updated_at = @Now WHERE id = @NoteId", new { NoteId = noteId, Now = now }, transaction, cancellationToken: ct));
+            sql.Get("Commands/Notes/TouchNote.sql"), new { NoteId = noteId, Now = now }, transaction, cancellationToken: ct));
 
         await transaction.CommitAsync(ct);
 
@@ -236,15 +188,15 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
         // Locking the note serializes page changes and uploads so page numbers stay consistent.
         var locked = await connection.ExecuteScalarAsync<Guid?>(new CommandDefinition(
-            $"SELECT n.id FROM notes n WHERE n.id = @NoteId AND {Editable} FOR UPDATE",
-            new { NoteId = noteId, user.UserId, user.Email }, transaction, cancellationToken: ct));
+            sql.Get("Commands/Notes/LockEditableNote.sql"),
+            new { NoteId = noteId, user.UserId, user.Email, Contributor = SharePermission.Contributor }, transaction, cancellationToken: ct));
         if (locked is null)
         {
             return (PageChangeOutcome.NotFound, null);
         }
 
         var order = (await connection.QueryAsync<Guid>(new CommandDefinition(
-            "SELECT id FROM pages WHERE note_id = @NoteId ORDER BY page_number",
+            sql.Get("Commands/Pages/GetPageOrder.sql"),
             new { NoteId = noteId }, transaction, cancellationToken: ct))).AsList();
         var index = order.IndexOf(pageId);
         if (index < 0)
@@ -261,7 +213,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
             }
 
             await connection.ExecuteAsync(new CommandDefinition(
-                "DELETE FROM pages WHERE id = @PageId AND note_id = @NoteId",
+                sql.Get("Commands/Pages/DeletePage.sql"),
                 new { PageId = pageId, NoteId = noteId }, transaction, cancellationToken: ct));
         }
         else
@@ -294,7 +246,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
         // Lock both notes in a fixed order so concurrent transfers between the same notes can't deadlock.
         var locked = (await connection.QueryAsync<Guid>(new CommandDefinition(
-            "SELECT id FROM notes WHERE id = ANY(@Ids) AND owner_id = @UserId ORDER BY id FOR UPDATE",
+            sql.Get("Commands/Notes/LockOwnedNotes.sql"),
             new { Ids = new[] { noteId, targetNoteId }, user.UserId }, transaction, cancellationToken: ct))).AsList();
         if (locked.Count != 2)
         {
@@ -302,7 +254,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         }
 
         var order = (await connection.QueryAsync<Guid>(new CommandDefinition(
-            "SELECT id FROM pages WHERE note_id = @NoteId ORDER BY page_number",
+            sql.Get("Commands/Pages/GetPageOrder.sql"),
             new { NoteId = noteId }, transaction, cancellationToken: ct))).AsList();
         if (!order.Remove(pageId))
         {
@@ -315,7 +267,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         }
 
         var (count, last) = await connection.QuerySingleAsync<(int Count, int Last)>(new CommandDefinition(
-            "SELECT count(*)::integer, coalesce(max(page_number), 0) FROM pages WHERE note_id = @NoteId",
+            sql.Get("Commands/Pages/GetPageCountAndLastNumber.sql"),
             new { NoteId = targetNoteId }, transaction, cancellationToken: ct));
         if (count >= UploadLimits.MaxFilesPerNote)
         {
@@ -323,12 +275,9 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         }
 
         var now = DateTimeOffset.UtcNow;
-        await connection.ExecuteAsync(new CommandDefinition("""
-            UPDATE pages SET note_id = @TargetNoteId, page_number = @PageNumber, updated_at = @Now
-             WHERE id = @PageId AND note_id = @NoteId;
-
-            UPDATE notes SET updated_at = @Now WHERE id = @TargetNoteId;
-            """, new { PageId = pageId, NoteId = noteId, TargetNoteId = targetNoteId, PageNumber = last + 1, Now = now }, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql.Get("Commands/Pages/TransferPage.sql"),
+            new { PageId = pageId, NoteId = noteId, TargetNoteId = targetNoteId, PageNumber = last + 1, Now = now }, transaction, cancellationToken: ct));
 
         await RenumberAsync(connection, transaction, noteId, order, now, ct);
 
@@ -338,59 +287,37 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     }
 
     /// <summary>Numbers a note's pages 1..n in the given order.</summary>
-    private static async Task RenumberAsync(
+    private async Task RenumberAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, Guid noteId, List<Guid> order, DateTimeOffset now, CancellationToken ct)
     {
-        // Negate first: uq_pages_note_page_number is checked row by row, so numbers can't be swapped in one step.
-        await connection.ExecuteAsync(new CommandDefinition("""
-            UPDATE pages SET page_number = -page_number WHERE note_id = @NoteId;
-
-            UPDATE pages p SET page_number = o.n::integer
-              FROM unnest(@Ids) WITH ORDINALITY AS o(id, n)
-             WHERE p.id = o.id AND p.note_id = @NoteId;
-
-            UPDATE notes SET updated_at = @Now WHERE id = @NoteId;
-            """, new { NoteId = noteId, Ids = order.ToArray(), Now = now }, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql.Get("Commands/Pages/RenumberPages.sql"),
+            new { NoteId = noteId, Ids = order.ToArray(), Now = now }, transaction, cancellationToken: ct));
     }
 
     public async Task<bool> DeleteNoteAsync(string ownerId, Guid noteId, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         return await connection.ExecuteAsync(new CommandDefinition(
-            "DELETE FROM notes WHERE id = @NoteId AND owner_id = @OwnerId",
+            sql.Get("Commands/Notes/DeleteNote.sql"),
             new { NoteId = noteId, OwnerId = ownerId }, cancellationToken: ct)) > 0;
     }
 
     public async Task<PageOriginal?> GetOriginalAsync(Guid noteId, Guid pageId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        return await connection.QuerySingleOrDefaultAsync<PageOriginal>(new CommandDefinition($"""
-            SELECT p.file_name, p.content_type, c.data
-              FROM pages p
-              JOIN page_contents c ON c.page_id = p.id
-              JOIN notes n ON n.id = p.note_id
-             WHERE p.id = @PageId AND p.note_id = @NoteId AND {Visible}
-            """, new { PageId = pageId, NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
+        return await connection.QuerySingleOrDefaultAsync<PageOriginal>(new CommandDefinition(
+            sql.Get("Commands/Pages/GetOriginal.sql"),
+            new { PageId = pageId, NoteId = noteId, user.UserId, user.Email }, cancellationToken: ct));
     }
 
     public async Task<PageDto?> UpdatePageTextAsync(Guid noteId, Guid pageId, DatabaseUser user, string text, CancellationToken ct)
     {
         // Saving text identical to the extraction clears the correction so future re-processing shows through.
         await using var connection = await db.OpenConnectionAsync(ct);
-        var page = await connection.QuerySingleOrDefaultAsync<Page>(new CommandDefinition($"""
-            WITH page AS (
-                UPDATE pages p
-                   SET edited_text = CASE WHEN p.extracted_text = @Text THEN NULL ELSE @Text END,
-                       updated_at = @Now
-                  FROM notes n
-                 WHERE p.id = @PageId AND p.note_id = @NoteId AND n.id = p.note_id AND {Editable}
-                RETURNING {PageColumns}
-            ), note AS (
-                UPDATE notes SET updated_at = @Now
-                 WHERE id = @NoteId AND EXISTS (SELECT 1 FROM page)
-            )
-            SELECT {PageColumns} FROM page p
-            """, new { PageId = pageId, NoteId = noteId, user.UserId, user.Email, Text = text, Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
+        var page = await connection.QuerySingleOrDefaultAsync<Page>(new CommandDefinition(
+            sql.Get("Commands/Pages/UpdatePageText.sql"),
+            new { PageId = pageId, NoteId = noteId, user.UserId, user.Email, Contributor = SharePermission.Contributor, Text = text, Now = DateTimeOffset.UtcNow }, cancellationToken: ct));
 
         return page?.ToDto();
     }
@@ -399,23 +326,14 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         Guid noteId, Guid pageId, DatabaseUser user, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""
-            UPDATE pages p
-               SET status = @Pending, attempts = 0, error = NULL, updated_at = @Now
-              FROM notes n
-             WHERE p.id = @PageId AND p.note_id = @NoteId AND n.id = p.note_id AND {Editable}
-               AND p.status NOT IN (@Pending, @Processing)
-            RETURNING {PageColumns};
-
-            SELECT EXISTS (
-                SELECT 1 FROM pages p JOIN notes n ON n.id = p.note_id
-                 WHERE p.id = @PageId AND p.note_id = @NoteId AND {Editable});
-            """, new
+        using var results = await connection.QueryMultipleAsync(new CommandDefinition(
+            sql.Get("Commands/Pages/ResetForReprocessing.sql"), new
             {
                 PageId = pageId,
                 NoteId = noteId,
                 user.UserId,
                 user.Email,
+                Contributor = SharePermission.Contributor,
                 Pending = ProcessingStatus.Pending,
                 Processing = ProcessingStatus.Processing,
                 Now = DateTimeOffset.UtcNow,
@@ -436,13 +354,8 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     public async Task<List<TagDto>> ListTagsAsync(string ownerId, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
-        var rows = await connection.QueryAsync<(string Name, int Count)>(new CommandDefinition("""
-            SELECT t.tag, count(*)::integer
-              FROM notes n
-             CROSS JOIN unnest(n.tags) AS t(tag)
-             WHERE n.owner_id = @OwnerId
-             GROUP BY t.tag
-            """, new { OwnerId = ownerId }, cancellationToken: ct));
+        var rows = await connection.QueryAsync<(string Name, int Count)>(new CommandDefinition(
+            sql.Get("Commands/Tags/ListTags.sql"), new { OwnerId = ownerId }, cancellationToken: ct));
 
         return rows
             .OrderByDescending(t => t.Count)
@@ -458,31 +371,9 @@ public sealed class NotesRepository(NpgsqlDataSource db)
     public async Task<PagedResult<SearchResultDto>> SearchAsync(
         string ownerId, string term, IEnumerable<string> tags, string headlineOptions, int page, int pageSize, CancellationToken ct)
     {
-        const string matches = $"""
-              FROM pages p
-              JOIN notes n ON n.id = p.note_id AND n.owner_id = p.owner_id
-             CROSS JOIN websearch_to_tsquery('{SearchConfig}', @Term) AS q(query)
-             WHERE p.owner_id = @OwnerId
-               AND n.tags @> @Tags
-               AND (p.search_vector @@ q.query
-                    OR n.title_search @@ q.query
-                    OR n.title ILIKE @Pattern ESCAPE '\'
-                    OR coalesce(p.edited_text, p.extracted_text, '') ILIKE @Pattern ESCAPE '\')
-            """;
-
         await using var connection = await db.OpenConnectionAsync(ct);
-        using var results = await connection.QueryMultipleAsync(new CommandDefinition($"""
-            SELECT count(*) {matches};
-
-            SELECT p.note_id, n.title, p.id AS page_id, p.page_number,
-                   ts_headline('{SearchConfig}', coalesce(p.edited_text, p.extracted_text, ''), q.query, @HeadlineOptions) AS snippet,
-                   n.updated_at, n.tags
-            {matches}
-             ORDER BY ts_rank(p.search_vector, q.query) + ts_rank(n.title_search, q.query) * 2 DESC,
-                      n.updated_at DESC,
-                      p.page_number
-             LIMIT @Limit OFFSET @Offset
-            """, new
+        using var results = await connection.QueryMultipleAsync(new CommandDefinition(
+            sql.Get("Commands/Search/SearchNotes.sql"), new
             {
                 OwnerId = ownerId,
                 Term = term,
@@ -513,7 +404,7 @@ public sealed class NotesRepository(NpgsqlDataSource db)
 
     internal static long Offset(int page, int pageSize) => (long)(page - 1) * pageSize;
 
-    private static async Task<List<Page>> InsertPagesAsync(
+    private async Task<List<Page>> InsertPagesAsync(
         NpgsqlConnection connection, NpgsqlTransaction transaction, Guid noteId, string ownerId, int firstNumber,
         IReadOnlyList<NewPage> files, DateTimeOffset now, CancellationToken ct)
     {
@@ -531,13 +422,11 @@ public sealed class NotesRepository(NpgsqlDataSource db)
         }).ToList();
         var contents = pages.Select((p, i) => new PageContent { PageId = p.Id, Data = files[i].Data }).ToList();
 
-        await connection.ExecuteAsync(new CommandDefinition("""
-            INSERT INTO pages (id, note_id, owner_id, page_number, file_name, content_type, size_bytes, status, attempts, updated_at)
-            VALUES (@Id, @NoteId, @OwnerId, @PageNumber, @FileName, @ContentType, @SizeBytes, @Status, @Attempts, @UpdatedAt)
-            """, pages, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition(
+            sql.Get("Commands/Pages/InsertPage.sql"), pages, transaction, cancellationToken: ct));
 
         await connection.ExecuteAsync(new CommandDefinition(
-            "INSERT INTO page_contents (page_id, data) VALUES (@PageId, @Data)", contents, transaction, cancellationToken: ct));
+            sql.Get("Commands/Pages/InsertPageContent.sql"), contents, transaction, cancellationToken: ct));
 
         return pages;
     }

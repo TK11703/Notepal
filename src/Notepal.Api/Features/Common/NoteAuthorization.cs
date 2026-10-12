@@ -7,7 +7,7 @@ namespace Notepal.Api.Features.Common;
 internal static class NoteAuthorization
 {
     public static async Task<(NoteAccess? Access, IResult Denied)> RequireEditableAsync(
-        NotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
     {
         var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
         return access is null ? (null, Results.NotFound())
@@ -16,7 +16,7 @@ internal static class NoteAuthorization
     }
 
     public static async Task<IResult?> RequireOwnerAsync(
-        NotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, Guid noteId, ICurrentUser user, CancellationToken ct)
     {
         var access = await notes.GetAccessAsync(noteId, user.ToDatabaseUser(), ct);
         return access is null ? Results.NotFound()

@@ -11,7 +11,7 @@ internal static class UpdateShareEndpoint
         shares.MapPut("/{shareId:guid}", HandleAsync).Produces<NoteShareDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid shareId, UpdateNoteShareRequest body,
-        NotesRepository notes, SharesRepository shares, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         var error = UpdateShareValidator.Validate(body);
         if (error is not null)

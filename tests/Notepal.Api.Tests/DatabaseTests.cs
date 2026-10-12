@@ -19,7 +19,8 @@ public sealed class DatabaseTests
     [Fact]
     public void Migrations_are_embedded_in_the_database_library_with_existing_resource_names()
     {
-        var resources = typeof(DatabaseMigrator).Assembly.GetManifestResourceNames().Order(StringComparer.Ordinal);
+        var resources = typeof(DatabaseMigrator).Assembly.GetManifestResourceNames()
+            .Where(resource => resource.StartsWith("migrations/", StringComparison.Ordinal)).Order(StringComparer.Ordinal);
         Assert.Equal(new[]
         {
             "migrations/0001_initial.sql",
@@ -40,9 +41,13 @@ public sealed class DatabaseTests
 
         Assert.NotNull(host.Services.GetRequiredService<NpgsqlDataSource>());
         Assert.NotNull(host.Services.GetRequiredService<DatabaseMigrator>());
-        Assert.Same(host.Services.GetRequiredService<NotesRepository>(), host.Services.GetRequiredService<NotesRepository>());
-        Assert.Same(host.Services.GetRequiredService<SharesRepository>(), host.Services.GetRequiredService<SharesRepository>());
-        Assert.Same(host.Services.GetRequiredService<PageWorkRepository>(), host.Services.GetRequiredService<PageWorkRepository>());
+        Assert.Same(host.Services.GetRequiredService<INotesRepository>(), host.Services.GetRequiredService<INotesRepository>());
+        Assert.Same(host.Services.GetRequiredService<ISharesRepository>(), host.Services.GetRequiredService<ISharesRepository>());
+        Assert.Same(host.Services.GetRequiredService<IPageWorkRepository>(), host.Services.GetRequiredService<IPageWorkRepository>());
+        Assert.IsType<NotesRepository>(host.Services.GetRequiredService<INotesRepository>());
+        Assert.IsType<SharesRepository>(host.Services.GetRequiredService<ISharesRepository>());
+        Assert.IsType<PageWorkRepository>(host.Services.GetRequiredService<IPageWorkRepository>());
+        Assert.Same(host.Services.GetRequiredService<ISqlFileProvider>(), host.Services.GetRequiredService<ISqlFileProvider>());
     }
 
     [Fact]

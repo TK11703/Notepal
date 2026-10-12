@@ -77,8 +77,17 @@ and retain ownership and sharing predicates in SQL. Migration resource names and
 so existing databases keep their migration history.
 
 Database code is grouped into `Connections`, `Initialization`, `Notes`, `Pages`, `Sharing`,
-`Processing` and `Migrations`. Public types retain the `Notepal.Database` namespace and repository
-APIs; row entities remain internal. SQL stays parameterized within the existing repositories.
+`Processing`, `Sql`, `Scripts` and `Migrations`. Public types retain the `Notepal.Database` namespace;
+row entities remain internal. API slices depend on `INotesRepository` and `ISharesRepository`;
+the extraction worker depends on `IPageWorkRepository`. These interfaces live alongside their
+implementations and are registered as singletons, allowing tests to replace persistence independently.
+
+Runtime SQL, including reads and migration-ledger commands, lives in
+`Scripts/Commands/<Feature>/<Script>.sql` (for example `Scripts/Commands/Pages/TransferPage.sql`).
+Each file contains a complete, static parameterized command or multi-result batch.
+Repositories use the singleton `ISqlFileProvider` to load embedded scripts, so published applications
+do not depend on the working directory or loose SQL files. Missing scripts fail explicitly.
+Versioned schema migrations remain in `Migrations` with their original resource names and checksums.
 
 The migration ledger records a SHA-256 checksum for each script, with CRLF normalized to LF.
 Startup verifies every applied migration before running pending scripts and fails if an applied

@@ -11,7 +11,7 @@ internal static class UpdatePageTextEndpoint
         notes.MapPut("/{noteId:guid}/pages/{pageId:guid}/text", HandleAsync).Produces<PageDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, Guid pageId, UpdatePageTextRequest body,
-        NotesRepository notes, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         var (access, denied) = await NoteAuthorization.RequireEditableAsync(notes, noteId, user, ct);
         if (access is null)

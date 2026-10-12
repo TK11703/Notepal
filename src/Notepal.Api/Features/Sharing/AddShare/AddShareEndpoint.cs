@@ -13,7 +13,7 @@ internal static class AddShareEndpoint
             .Produces<NoteShareDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, AddNoteShareRequest body,
-        NotesRepository notes, SharesRepository shares, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         var ownerId = user.UserId!;
         var (email, recipientId, error) = AddShareValidator.Validate(body);

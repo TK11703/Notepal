@@ -11,7 +11,7 @@ internal static class ListNotesEndpoint
     public static void Map(RouteGroupBuilder notes) =>
         notes.MapGet("/", HandleAsync).Produces<PagedResult<NoteSummaryDto>>();
 
-    private static async Task<IResult> HandleAsync(NotesRepository notes, ICurrentUser user,
+    private static async Task<IResult> HandleAsync(INotesRepository notes, ICurrentUser user,
         [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         (page, pageSize) = Paging.Normalize(page, pageSize);

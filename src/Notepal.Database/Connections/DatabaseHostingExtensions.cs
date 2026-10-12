@@ -29,10 +29,11 @@ public static class DatabaseHostingExtensions
         });
 
         DapperConfiguration.Apply();
+        builder.Services.AddSingleton<ISqlFileProvider, SqlFileProvider>();
         builder.Services.AddSingleton<DatabaseMigrator>();
-        builder.Services.AddSingleton<NotesRepository>();
-        builder.Services.AddSingleton<SharesRepository>();
-        builder.Services.AddSingleton<PageWorkRepository>();
+        builder.Services.AddSingleton<INotesRepository, NotesRepository>();
+        builder.Services.AddSingleton<ISharesRepository, SharesRepository>();
+        builder.Services.AddSingleton<IPageWorkRepository, PageWorkRepository>();
         return builder;
     }
 }

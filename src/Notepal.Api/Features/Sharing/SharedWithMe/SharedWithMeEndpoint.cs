@@ -11,7 +11,7 @@ internal static class SharedWithMeEndpoint
         shared.MapGet("/with-me", HandleAsync).Produces<PagedResult<SharedNoteDto>>();
 
     private static async Task<IResult> HandleAsync(
-        SharesRepository shares, ICurrentUser user, int page = 1, int pageSize = 20, CancellationToken ct = default)
+        ISharesRepository shares, ICurrentUser user, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         (page, pageSize) = Paging.Normalize(page, pageSize);
         return Results.Ok(await shares.SharedWithMeAsync(user.ToDatabaseUser(), page, pageSize, ct));

@@ -13,7 +13,7 @@ public sealed class DatabaseMigrationTests(NotepalApiFactory factory) : IClassFi
     public async Task Library_migrations_preserve_existing_history_and_data_when_rerun()
     {
         var services = factory.Services;
-        var notes = services.GetRequiredService<NotesRepository>();
+        var notes = services.GetRequiredService<INotesRepository>();
         var user = new DatabaseUser(Guid.NewGuid().ToString(), null);
         var created = await notes.CreateNoteAsync(user.UserId, "Migration preservation", ["test"],
             [new NewPage("original.png", "image/png", TestFiles.Png)], CancellationToken.None);

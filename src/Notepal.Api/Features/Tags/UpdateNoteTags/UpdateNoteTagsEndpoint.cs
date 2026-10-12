@@ -11,7 +11,7 @@ internal static class UpdateNoteTagsEndpoint
         api.MapPut("/notes/{noteId:guid}/tags", HandleAsync).Produces<NoteDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, UpdateNoteTagsRequest body,
-        NotesRepository notes, ICurrentUser user, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, CancellationToken ct)
     {
         var (tags, error) = UpdateNoteTagsValidator.Validate(body);
         if (error is not null)

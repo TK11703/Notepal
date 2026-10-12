@@ -11,7 +11,7 @@ internal static class ListSharesEndpoint
         shares.MapGet("/", HandleAsync).Produces<List<NoteShareDto>>();
 
     private static async Task<IResult> HandleAsync(
-        Guid noteId, NotesRepository notes, SharesRepository shares, ICurrentUser user, CancellationToken ct)
+        Guid noteId, INotesRepository notes, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         var denied = await NoteAuthorization.RequireOwnerAsync(notes, noteId, user, ct);
         if (denied is not null)

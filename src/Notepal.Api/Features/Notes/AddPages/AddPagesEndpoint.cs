@@ -12,7 +12,7 @@ internal static class AddPagesEndpoint
         notes.MapPost("/{noteId:guid}/pages", HandleAsync).DisableAntiforgery().Produces<NoteDto>();
 
     private static async Task<IResult> HandleAsync(Guid noteId, IFormFileCollection files,
-        NotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
+        INotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
         var (pages, error) = await AddPagesValidator.ValidateAsync(files, ct);
         if (error is not null)
