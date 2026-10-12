@@ -34,7 +34,7 @@ public sealed class SqlFileProviderTests
     [Theory]
     [InlineData("Commands/Notes/Missing.sql")]
     [InlineData("Commands/Notes/listnotes.sql")]
-    [InlineData("../Migrations/0001_initial.sql")]
+    [InlineData("Schema/0001_initial.sql")]
     public void Missing_paths_fail_without_filesystem_fallback(string path)
     {
         var exception = Assert.Throws<FileNotFoundException>(() => new SqlFileProvider().Get(path));

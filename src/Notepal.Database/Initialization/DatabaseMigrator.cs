@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace Notepal.Database;
 
-/// <summary>Applies the embedded <c>Migrations/*.sql</c> scripts in name order, each exactly once.</summary>
+/// <summary>Applies the embedded <c>Scripts/Schema/*.sql</c> scripts in name order, each exactly once.</summary>
 public sealed class DatabaseMigrator
 {
     private const string ResourcePrefix = "migrations/";

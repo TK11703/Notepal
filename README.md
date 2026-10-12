@@ -57,7 +57,7 @@ Browser ──(cookie, SignalR)──► Notepal.Web  (Blazor Web App, interacti
 | --- | --- |
 | `src/Notepal.Web` | Blazor Web App: sign-in, upload/camera, viewer/editor, search, theme. Proxies original files from the API. |
 | `src/Notepal.Api` | Minimal API with built-in validation, authentication and authorization, upload validation (extension **and** file signature), background text extraction, search orchestration. Calls repositories from `Notepal.Database`. |
-| `src/Notepal.Database` | Class library for Dapper repositories, PostgreSQL connections and managed-identity authentication, database models/projections, and embedded SQL migrations (`Migrations/*.sql`). |
+| `src/Notepal.Database` | Class library for Dapper repositories, PostgreSQL connections and managed-identity authentication, database models/projections, and embedded SQL migrations (`Scripts/Schema/*.sql`). |
 | `src/Notepal.AppHost` | Aspire AppHost: runs PostgreSQL (container + data volume), the API and the web app together with the Aspire dashboard. |
 | `src/Notepal.ServiceDefaults` | Shared Aspire defaults: OpenTelemetry, health checks, service discovery. |
 | `src/Notepal.Contracts` | Request/response DTOs, validation attributes, enums and shared input limits/normalization. No dependency on API, Web or Database. |
@@ -77,7 +77,7 @@ and retain ownership and sharing predicates in SQL. Migration resource names and
 so existing databases keep their migration history.
 
 Database code is grouped into `Connections`, `Initialization`, `Notes`, `Pages`, `Sharing`,
-`Processing`, `Sql`, `Scripts` and `Migrations`. Public types retain the `Notepal.Database` namespace;
+`Processing`, `Sql` and `Scripts`. Public types retain the `Notepal.Database` namespace;
 row entities remain internal. API slices depend on `INotesRepository` and `ISharesRepository`;
 the extraction worker depends on `IPageWorkRepository`. These interfaces live alongside their
 implementations and are registered as singletons, allowing tests to replace persistence independently.
@@ -87,7 +87,9 @@ Runtime SQL, including reads and migration-ledger commands, lives in
 Each file contains a complete, static parameterized command or multi-result batch.
 Repositories use the singleton `ISqlFileProvider` to load embedded scripts, so published applications
 do not depend on the working directory or loose SQL files. Missing scripts fail explicitly.
-Versioned schema migrations remain in `Migrations` with their original resource names and checksums.
+Versioned schema migrations live in `Scripts/Schema`, alongside the runtime `Scripts/Commands`
+collection. They retain their original `migrations/<filename>.sql` embedded resource names,
+version identifiers and checksums so relocating the source files does not change database history.
 
 The migration ledger records a SHA-256 checksum for each script, with CRLF normalized to LF.
 Startup verifies every applied migration before running pending scripts and fails if an applied
