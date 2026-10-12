@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Notepal.Api.Auth;
 using Notepal.Contracts;
@@ -8,9 +10,11 @@ namespace Notepal.Api.Features.Notes.GetNoteStats;
 internal static class GetNoteStatsEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
-        notes.MapGet("/stats", HandleAsync).Produces<NoteStatsDto>();
+        notes.MapGet("/stats", HandleAsync)
+            .WithName("GetNoteStats")
+            .Produces<NoteStatsDto>();
 
-    private static async Task<IResult> HandleAsync(INotesRepository notes, ICurrentUser user,
+    private static async Task<Ok<NoteStatsDto>> HandleAsync(INotesRepository notes, ICurrentUser user,
         [FromQuery(Name = "tag")] string[]? tags, CancellationToken ct) =>
-        Results.Ok(await notes.GetStatsAsync(user.UserId!, TagLimits.NormalizeAll(tags), ct));
+        TypedResults.Ok(await notes.GetStatsAsync(user.UserId!, TagLimits.NormalizeAll(tags), ct));
 }

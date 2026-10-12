@@ -1,11 +1,13 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Contracts;
 
 namespace Notepal.Api.Features.Notes.TransferPage;
 
 internal static class TransferPageValidator
 {
-    public static IResult? Validate(Guid noteId, TransferPageRequest body) =>
+    public static ValidationProblem? Validate(Guid noteId, TransferPageRequest body) =>
         body.TargetNoteId == Guid.Empty || body.TargetNoteId == noteId
-            ? Results.ValidationProblem(new Dictionary<string, string[]> { ["targetNoteId"] = ["Choose a different note."] })
+            ? TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["targetNoteId"] = ["Choose a different note."] })
             : null;
 }

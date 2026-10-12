@@ -1,10 +1,12 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Contracts;
 
 namespace Notepal.Api.Features.Sharing.AddShare;
 
 internal static class AddShareValidator
 {
-    public static (string Email, string? RecipientId, IResult? Error) Validate(AddNoteShareRequest body)
+    public static (string Email, string? RecipientId, ValidationProblem? Error) Validate(AddNoteShareRequest body)
     {
         var email = ShareLimits.NormalizeEmail(body.Email);
         if (email is null)
@@ -23,7 +25,7 @@ internal static class AddShareValidator
             : null);
     }
 
-    public static IResult? ValidateRecipient(string ownerId, string? ownerEmail, string email, string? recipientId) =>
+    public static ValidationProblem? ValidateRecipient(string ownerId, string? ownerEmail, string email, string? recipientId) =>
         recipientId == ownerId || email == ownerEmail
             ? ShareValidation.Invalid("email", "You own this note already.")
             : null;

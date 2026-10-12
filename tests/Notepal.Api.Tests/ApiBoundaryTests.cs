@@ -106,6 +106,7 @@ public sealed class ApiBoundaryTests(BoundaryApiFactory factory) : IClassFixture
             var namespaceParts = endpointType.Namespace!.Split('.');
             Assert.Equal(5, namespaceParts.Length);
             Assert.Equal(operation, namespaceParts[^1]);
+            Assert.Equal(operation, endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName);
             Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(), policy => policy.Policy == "NotesUser");
             Assert.Null(endpoint.Metadata.GetMetadata<IAllowAnonymous>());
             Assert.Contains(method.GetParameters(), parameter => parameter.ParameterType == typeof(CancellationToken));
@@ -121,7 +122,7 @@ public sealed class ApiBoundaryTests(BoundaryApiFactory factory) : IClassFixture
             {
                 if (response.StatusCode >= 400)
                 {
-                    Assert.Equal(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails), response.Type);
+                    Assert.True(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails).IsAssignableFrom(response.Type));
                 }
                 else
                 {

@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Api.Auth;
 using Notepal.Api.Features.Common;
 using Notepal.Contracts;
@@ -9,10 +11,11 @@ internal static class AddShareEndpoint
 {
     public static void Map(RouteGroupBuilder shares) =>
         shares.MapPost("/", HandleAsync)
+            .WithName("AddShare")
             .Produces<NoteShareDto>(StatusCodes.Status201Created)
             .Produces<NoteShareDto>();
 
-    private static async Task<IResult> HandleAsync(Guid noteId, AddNoteShareRequest body,
+    private static async Task<Results<Created<NoteShareDto>, Ok<NoteShareDto>, ValidationProblem, NotFound, ProblemHttpResult>> HandleAsync(Guid noteId, AddNoteShareRequest body,
         INotesRepository notes, ISharesRepository shares, ICurrentUser user, CancellationToken ct)
     {
         var ownerId = user.UserId!;
@@ -22,10 +25,14 @@ internal static class AddShareEndpoint
             return error;
         }
 
-        var denied = await NoteAuthorization.RequireOwnerAsync(notes, noteId, user, ct);
-        if (denied is not null)
+        var (allowed, forbidden, notFound) = await NoteAuthorization.RequireOwnerAsync(notes, noteId, user, ct);
+        if (notFound)
         {
-            return denied;
+            return TypedResults.NotFound();
+        }
+        if (forbidden is not null)
+        {
+            return forbidden;
         }
 
         var recipientError = AddShareValidator.ValidateRecipient(ownerId, user.Email, email, recipientId);
@@ -44,11 +51,10 @@ internal static class AddShareEndpoint
 
         return outcome switch
         {
-            UpsertShareOutcome.NotFound => Results.NotFound(),
+            UpsertShareOutcome.NotFound => TypedResults.NotFound(),
             UpsertShareOutcome.TooMany => ShareValidation.Invalid("email", $"A note can be shared with at most {ShareLimits.MaxSharesPerNote} people."),
-            UpsertShareOutcome.Created => Results.Created($"/api/notes/{noteId}/shares/{share!.Id}", share),
-            _ => Results.Ok(share),
+            UpsertShareOutcome.Created => TypedResults.Created($"/api/notes/{noteId}/shares/{share!.Id}", share!),
+            _ => TypedResults.Ok(share!),
         };
     }
-
 }

@@ -1,99 +1,16 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Identity.Web;
-using Notepal.Api.Auth;
-using Notepal.Api.Features.Notes;
-using Notepal.Api.Features.Search;
-using Notepal.Api.Features.Sharing;
-using Notepal.Api.Features.Tags;
-using Notepal.Api.Ocr;
-using Notepal.Api.Processing;
-using Notepal.Database;
-using Notepal.Contracts;
+using Notepal.Api.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
-
-builder.Services.AddOpenApi();
-builder.Services.AddProblemDetails();
-builder.Services.AddValidation();
-
-builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = UploadLimits.MaxRequestBytes);
-builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = UploadLimits.MaxRequestBytes);
-builder.Services.Configure<ForwardedHeadersOptions>(o =>
-{
-    // Azure Container Apps terminates TLS at its ingress and forwards the original scheme/client IP.
-    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    o.KnownIPNetworks.Clear();
-    o.KnownProxies.Clear();
-});
-
-// Authentication: Entra ID access tokens issued for this API.
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
-
-var requiredScope = builder.Configuration["AzureAd:Scopes"] ?? "access_as_user";
-builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("NotesUser", policy => policy
-        .RequireAuthenticatedUser()
-        .RequireScope(requiredScope.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        // Every row is keyed on the user's object id, so a token without one can never be served.
-        .RequireAssertion(ctx => HttpContextCurrentUser.GetUserId(ctx.User) is not null));
-
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
-
-builder.AddNotepalDatabase();
-
-builder.Services.Configure<OcrOptions>(builder.Configuration.GetSection(OcrOptions.SectionName));
-if (builder.Configuration.GetSection(OcrOptions.SectionName).Get<OcrOptions>()?.IsConfigured == true)
-{
-    builder.Services.AddSingleton<IOcrClient, AzureOpenAiOcrClient>();
-}
-else
-{
-    builder.Services.AddSingleton<IOcrClient, UnconfiguredOcrClient>();
-}
-
-builder.Services.AddSingleton<TextExtractionService>();
-builder.Services.AddSingleton<ProcessingQueue>();
-builder.Services.AddHostedService<PageProcessingService>();
+builder.AddNotepalApi();
 
 var app = builder.Build();
 
-if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
-{
-    await app.Services.GetRequiredService<DatabaseMigrator>().MigrateAsync(app.Lifetime.ApplicationStopping);
-}
+await app.InitializeDatabaseAsync(app.Lifetime.ApplicationStopping);
 
-app.UseForwardedHeaders();
-app.UseExceptionHandler();
-app.UseStatusCodePages();
-
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Liveness only: a database outage must not make Container Apps restart the replica.
-app.MapHealthChecks("/healthz", new HealthCheckOptions { Predicate = r => r.Tags.Contains("live") }).AllowAnonymous();
-// Readiness includes PostgreSQL. Return status only, never dependency or exception details.
-app.MapHealthChecks("/readyz").AllowAnonymous();
-app.MapDefaultEndpoints();
-
-app.MapGroup("/api")
-    .RequireAuthorization("NotesUser")
-    .MapNotesEndpoints()
-    .MapTagsEndpoints()
-    .MapSharingEndpoints()
-    .MapSearchEndpoints();
+app.UseNotepalApi();
 
 app.Run();
 
 public partial class Program;
+

@@ -1,10 +1,12 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Contracts;
 
 namespace Notepal.Api.Features.Sharing.LeaveSharedNotes;
 
 internal static class LeaveSharedNotesValidator
 {
-    public static (List<Guid> NoteIds, IResult? Error) Validate(LeaveSharedNotesRequest body)
+    public static (List<Guid> NoteIds, ValidationProblem? Error) Validate(LeaveSharedNotesRequest body)
     {
         var noteIds = (body.NoteIds ?? []).Where(id => id != Guid.Empty).Distinct().ToList();
         if (noteIds.Count == 0)

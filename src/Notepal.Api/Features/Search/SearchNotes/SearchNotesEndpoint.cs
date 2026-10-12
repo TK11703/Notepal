@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Notepal.Api.Auth;
 using Notepal.Api.Features.Common;
@@ -16,9 +18,12 @@ internal static class SearchNotesEndpoint
         $"StartSel={HighlightStart}, StopSel={HighlightEnd}, MaxWords=35, MinWords=15, MaxFragments=2, FragmentDelimiter=\" … \"";
 
     public static void Map(RouteGroupBuilder api) =>
-        api.MapGet("/search", Search).WithTags("Search").Produces<PagedResult<SearchResultDto>>();
+        api.MapGet("/search", Search)
+            .WithTags("Search")
+            .WithName("SearchNotes")
+            .Produces<PagedResult<SearchResultDto>>();
 
-    private static async Task<IResult> Search(string? q, INotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
+    private static async Task<Ok<PagedResult<SearchResultDto>>> Search(string? q, INotesRepository notes, ICurrentUser user, [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         var ownerId = user.UserId!;
         (page, pageSize) = Paging.Normalize(page, pageSize);
@@ -27,8 +32,8 @@ internal static class SearchNotesEndpoint
         if (term.Length == 0)
         {
             return wantedTags.Count == 0
-                ? Results.Ok(new PagedResult<SearchResultDto>([], 0, page, pageSize))
-                : Results.Ok(await notes.SearchByTagsAsync(ownerId, wantedTags, page, pageSize, ct));
+                ? TypedResults.Ok(new PagedResult<SearchResultDto>([], 0, page, pageSize))
+                : TypedResults.Ok(await notes.SearchByTagsAsync(ownerId, wantedTags, page, pageSize, ct));
         }
 
         if (term.Length > NoteLimits.MaxSearchLength)
@@ -36,6 +41,6 @@ internal static class SearchNotesEndpoint
             term = term[..NoteLimits.MaxSearchLength];
         }
 
-        return Results.Ok(await notes.SearchAsync(ownerId, term, wantedTags, HeadlineOptions, page, pageSize, ct));
+        return TypedResults.Ok(await notes.SearchAsync(ownerId, term, wantedTags, HeadlineOptions, page, pageSize, ct));
     }
 }

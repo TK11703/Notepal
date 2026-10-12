@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Notepal.Api.Auth;
 using Notepal.Api.Features.Common;
@@ -9,12 +11,14 @@ namespace Notepal.Api.Features.Notes.ListNotes;
 internal static class ListNotesEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
-        notes.MapGet("/", HandleAsync).Produces<PagedResult<NoteSummaryDto>>();
+        notes.MapGet("/", HandleAsync)
+            .WithName("ListNotes")
+            .Produces<PagedResult<NoteSummaryDto>>();
 
-    private static async Task<IResult> HandleAsync(INotesRepository notes, ICurrentUser user,
+    private static async Task<Ok<PagedResult<NoteSummaryDto>>> HandleAsync(INotesRepository notes, ICurrentUser user,
         [FromQuery(Name = "tag")] string[]? tags, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
         (page, pageSize) = Paging.Normalize(page, pageSize);
-        return Results.Ok(await notes.ListNotesAsync(user.UserId!, TagLimits.NormalizeAll(tags), page, pageSize, ct));
+        return TypedResults.Ok(await notes.ListNotesAsync(user.UserId!, TagLimits.NormalizeAll(tags), page, pageSize, ct));
     }
 }

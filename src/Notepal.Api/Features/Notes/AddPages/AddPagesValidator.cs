@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Contracts;
 using Notepal.Database;
 
@@ -5,7 +7,7 @@ namespace Notepal.Api.Features.Notes.AddPages;
 
 internal static class AddPagesValidator
 {
-    public static async Task<(List<NewPage> Pages, IResult? Error)> ValidateAsync(
+    public static async Task<(List<NewPage> Pages, ValidationProblem? Error)> ValidateAsync(
         IFormFileCollection files, CancellationToken ct)
     {
         if (files.Count == 0)

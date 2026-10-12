@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Api.Features.Tags;
 using Notepal.Contracts;
 using Notepal.Database;
@@ -6,14 +8,14 @@ namespace Notepal.Api.Features.Notes.CreateNote;
 
 internal static class CreateNoteValidator
 {
-    public static async Task<(string Title, List<string> Tags, List<NewPage> Pages, IResult? Error)> ValidateAsync(
+    public static async Task<(string Title, List<string> Tags, List<NewPage> Pages, ValidationProblem? Error)> ValidateAsync(
         IFormCollection form, CancellationToken ct)
     {
         var files = form.Files;
         var title = form["title"].ToString().Trim();
         if (title.Length > NoteLimits.MaxTitleLength)
         {
-            return (title, [], [], Results.ValidationProblem(new Dictionary<string, string[]>
+            return (title, [], [], TypedResults.ValidationProblem(new Dictionary<string, string[]>
             {
                 ["title"] = [$"Title must be at most {NoteLimits.MaxTitleLength} characters."],
             }));

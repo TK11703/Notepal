@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Notepal.Api.Auth;
 using Notepal.Api.Features.Common;
 using Notepal.Api.Processing;
@@ -9,9 +11,12 @@ namespace Notepal.Api.Features.Notes.AddPages;
 internal static class AddPagesEndpoint
 {
     public static void Map(RouteGroupBuilder notes) =>
-        notes.MapPost("/{noteId:guid}/pages", HandleAsync).DisableAntiforgery().Produces<NoteDto>();
+        notes.MapPost("/{noteId:guid}/pages", HandleAsync)
+            .DisableAntiforgery()
+            .WithName("AddPages")
+            .Produces<NoteDto>();
 
-    private static async Task<IResult> HandleAsync(Guid noteId, IFormFileCollection files,
+    private static async Task<Results<Ok<NoteDto>, ValidationProblem, NotFound, ProblemHttpResult>> HandleAsync(Guid noteId, IFormFileCollection files,
         INotesRepository notes, ICurrentUser user, ProcessingQueue queue, CancellationToken ct)
     {
         var (pages, error) = await AddPagesValidator.ValidateAsync(files, ct);
@@ -20,17 +25,21 @@ internal static class AddPagesEndpoint
             return error;
         }
 
-        var (access, denied) = await NoteAuthorization.RequireEditableAsync(notes, noteId, user, ct);
-        if (access is null)
+        var (access, forbidden, notFound) = await NoteAuthorization.RequireEditableAsync(notes, noteId, user, ct);
+        if (notFound)
         {
-            return denied;
+            return TypedResults.NotFound();
+        }
+        if (forbidden is not null)
+        {
+            return forbidden;
         }
 
-        var result = await notes.AddPagesAsync(noteId, user.ToDatabaseUser(), access, pages, ct);
+        var result = await notes.AddPagesAsync(noteId, user.ToDatabaseUser(), access!, pages, ct);
         switch (result.Outcome)
         {
             case AddPagesOutcome.NotFound:
-                return Results.NotFound();
+                return TypedResults.NotFound();
             case AddPagesOutcome.TooMany:
                 return NoteUploads.FilesProblem(result.Remaining == 0
                     ? $"This note already has the maximum of {UploadLimits.MaxFilesPerNote} pages."
@@ -42,6 +51,6 @@ internal static class AddPagesEndpoint
             queue.Enqueue(pageId);
         }
 
-        return Results.Ok(result.Note);
+        return TypedResults.Ok(result.Note!);
     }
 }

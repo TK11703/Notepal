@@ -45,6 +45,6 @@ internal static class NoteUploads
         return (pages, errors);
     }
 
-    public static IResult FilesProblem(params string[] errors) =>
-        Results.ValidationProblem(new Dictionary<string, string[]> { ["files"] = errors });
+    public static Microsoft.AspNetCore.Http.HttpResults.ValidationProblem FilesProblem(params string[] errors) =>
+        TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["files"] = errors });
 }
